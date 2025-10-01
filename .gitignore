@@ -5,6 +5,7 @@ __pycache__/
 *.so
 .Python
 venv/
+.venv/
 env/
 ENV/
 *.egg-info/
@@ -25,6 +26,7 @@ build/
 .idea/
 *.swp
 *.swo
+*.iml
 
 # OS
 .DS_Store
@@ -38,3 +40,13 @@ thumbnails/
 
 # Logs
 *.log
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+frontend/.env
+frontend/.env.local
+
+# Alembic
+alembic.ini
