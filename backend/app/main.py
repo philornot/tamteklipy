@@ -6,11 +6,20 @@ import time
 from pathlib import Path
 
 from app.core.config import settings
+from app.core.error_handlers import (
+    tamteklipy_exception_handler,
+    validation_exception_handler,
+    sqlalchemy_exception_handler,
+    generic_exception_handler
+)
+from app.core.exceptions import TamteKlipyException
 from app.core.logging_config import setup_logging
 from app.routers import auth, files, awards
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from sqlalchemy.exc import SQLAlchemyError
 
 # Konfiguracja logowania
 setup_logging(log_level="INFO")
@@ -23,6 +32,12 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc"
 )
+
+# Rejestracja exception handlers
+app.add_exception_handler(TamteKlipyException, tamteklipy_exception_handler)
+app.add_exception_handler(RequestValidationError, validation_exception_handler)
+app.add_exception_handler(SQLAlchemyError, sqlalchemy_exception_handler)
+app.add_exception_handler(Exception, generic_exception_handler)
 
 # Konfiguracja CORS
 app.add_middleware(
@@ -45,14 +60,14 @@ app.add_middleware(
 async def log_requests(request: Request, call_next):
     """Middleware do logowania requestów i mierzenia czasu odpowiedzi"""
     start_time = time.time()
-    logger.info(f"🔵 Request: {request.method} {request.url.path}")
+    logger.info(f"Request: {request.method} {request.url.path}")
 
     response = await call_next(request)
 
     process_time = time.time() - start_time
     response.headers["X-Process-Time"] = str(process_time)
     logger.info(
-        f"✅ Response: {request.method} {request.url.path} "
+        f"Response: {request.method} {request.url.path} "
         f"[Status: {response.status_code}] [Time: {process_time:.3f}s]"
     )
 
@@ -63,20 +78,20 @@ async def log_requests(request: Request, call_next):
 @app.on_event("startup")
 async def startup_event():
     """Wykonywane przy starcie aplikacji"""
-    logger.info(f"🚀 {settings.app_name} startuje...")
-    logger.info(f"🌍 Environment: {settings.environment}")
-    logger.info("📚 Dokumentacja dostępna na: http://localhost:8000/docs")
+    logger.info(f"{settings.app_name} startuje...")
+    logger.info(f"Environment: {settings.environment}")
+    logger.info("Dokumentacja dostępna na: http://localhost:8000/docs")
 
 
 # Shutdown event
 @app.on_event("shutdown")
 async def shutdown_event():
     """Wykonywane przy zamykaniu aplikacji"""
-    logger.info(f"🛑 {settings.app_name} wyłącza się...")
+    logger.info(f"{settings.app_name} wyłącza się...")
 
 
 # Root endpoint
-@app.get("/", tags=["📊 Status"])
+@app.get("/", tags=["Status"])
 async def root():
     """Podstawowy endpoint do sprawdzenia czy API działa"""
     return {
@@ -94,7 +109,7 @@ async def root():
 
 
 # Health check endpoint
-@app.get("/health", tags=["📊 Status"])
+@app.get("/health", tags=["Status"])
 async def health_check():
     """
     Health check dla monitoringu
@@ -140,9 +155,9 @@ async def health_check():
 
 
 # Rejestracja routerów
-app.include_router(auth.router, prefix="/api/auth", tags=["🔐 Autoryzacja"])
-app.include_router(files.router, prefix="/api/files", tags=["📁 Pliki"])
-app.include_router(awards.router, prefix="/api/awards", tags=["🏆 Nagrody"])
+app.include_router(auth.router, prefix="/api/auth", tags=["Autoryzacja"])
+app.include_router(files.router, prefix="/api/files", tags=["Pliki"])
+app.include_router(awards.router, prefix="/api/awards", tags=["Nagrody"])
 
 if __name__ == "__main__":
     import uvicorn
