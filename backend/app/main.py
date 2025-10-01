@@ -1,8 +1,19 @@
 """
 TamteKlipy — Główny plik aplikacji FastAPI
 """
-from fastapi import FastAPI
+import logging
+import time
+
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+
+# Konfiguracja logowania
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # Import routerów (na razie zakomentowane, dodamy później)
 # from app.routers import auth, clips, awards
@@ -19,7 +30,9 @@ app = FastAPI(
 origins = [
     "http://localhost:5173",  # Vite dev server
     "http://localhost:3000",  # Alternatywny port
-    # Dodamy Cloudflare URL później
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:3000",
+    # Cloudflare URL dodamy później przez zmienne środowiskowe
 ]
 
 app.add_middleware(
@@ -30,11 +43,57 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Trusted Host Middleware (ochrona przed Host Header attacks)
+app.add_middleware(
+    TrustedHostMiddleware,
+    allowed_hosts=["*"]  # W produkcji ograniczymy do konkretnych hostów
+)
+
+
+# Custom Middleware - Request Timing & Logging
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    """Middleware do logowania requestów i mierzenia czasu odpowiedzi"""
+    start_time = time.time()
+
+    # Loguj przychodzące requesty
+    logger.info(f"🔵 Request: {request.method} {request.url.path}")
+
+    # Wykonaj request
+    response = await call_next(request)
+
+    # Oblicz czas wykonania
+    process_time = time.time() - start_time
+    response.headers["X-Process-Time"] = str(process_time)
+
+    # Loguj odpowiedź
+    logger.info(
+        f"✅ Response: {request.method} {request.url.path} "
+        f"[Status: {response.status_code}] [Time: {process_time:.3f}s]"
+    )
+
+    return response
+
+
+# Startup event
+@app.on_event("startup")
+async def startup_event():
+    """Wykonywane przy starcie aplikacji"""
+    logger.info("🚀 TamteKlipy API startuje...")
+    logger.info("📚 Dokumentacja dostępna na: http://localhost:8000/docs")
+
+
+# Shutdown event
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Wykonywane przy zamykaniu aplikacji"""
+    logger.info("🛑 TamteKlipy API wyłącza się...")
+
 
 # Health check endpoint
 @app.get("/")
 async def root():
-    """Podstawowy endpoint do sprawdzenia, czy API działa"""
+    """Podstawowy endpoint do sprawdzenia czy API działa"""
     return {
         "message": "TamteKlipy API działa!",
         "version": "0.1.0",
