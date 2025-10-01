@@ -6,16 +6,14 @@ import time
 from pathlib import Path
 
 from app.core.config import settings
-from app.routers import auth, files, awards  # DODANE: awards
+from app.core.logging_config import setup_logging
+from app.routers import auth, files, awards
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 
 # Konfiguracja logowania
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+setup_logging(log_level="INFO")
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
@@ -48,13 +46,16 @@ async def log_requests(request: Request, call_next):
     """Middleware do logowania requestów i mierzenia czasu odpowiedzi"""
     start_time = time.time()
     logger.info(f"🔵 Request: {request.method} {request.url.path}")
+
     response = await call_next(request)
+
     process_time = time.time() - start_time
     response.headers["X-Process-Time"] = str(process_time)
     logger.info(
         f"✅ Response: {request.method} {request.url.path} "
         f"[Status: {response.status_code}] [Time: {process_time:.3f}s]"
     )
+
     return response
 
 
@@ -77,7 +78,7 @@ async def shutdown_event():
 # Root endpoint
 @app.get("/", tags=["📊 Status"])
 async def root():
-    """Podstawowy endpoint do sprawdzenia, czy API działa"""
+    """Podstawowy endpoint do sprawdzenia czy API działa"""
     return {
         "message": f"{settings.app_name} działa!",
         "version": "0.1.0",
@@ -123,6 +124,7 @@ async def health_check():
                 health_status["status"] = "degraded"
 
         except Exception as e:
+            logger.error(f"Storage check failed: {e}")
             health_status["checks"]["storage"] = {
                 "status": "error",
                 "error": str(e)

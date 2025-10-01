@@ -40,6 +40,7 @@ thumbnails/
 
 # Logs
 *.log
+logs/
 
 # Frontend
 frontend/node_modules/
