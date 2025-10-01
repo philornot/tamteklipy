@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 
 from app.core.config import settings
-from app.routers import auth, files
+from app.routers import auth, files, awards  # DODANE: awards
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
@@ -75,20 +75,25 @@ async def shutdown_event():
 
 
 # Root endpoint
-@app.get("/")
+@app.get("/", tags=["📊 Status"])
 async def root():
-    """Podstawowy endpoint do sprawdzenia czy API działa"""
+    """Podstawowy endpoint do sprawdzenia, czy API działa"""
     return {
         "message": f"{settings.app_name} działa!",
         "version": "0.1.0",
         "status": "online",
         "environment": settings.environment,
-        "docs": "/docs"
+        "docs": "/docs",
+        "endpoints": {
+            "auth": "/api/auth",
+            "files": "/api/files",
+            "awards": "/api/awards"
+        }
     }
 
 
 # Health check endpoint
-@app.get("/health")
+@app.get("/health", tags=["📊 Status"])
 async def health_check():
     """
     Health check dla monitoringu
@@ -135,6 +140,7 @@ async def health_check():
 # Rejestracja routerów
 app.include_router(auth.router, prefix="/api/auth", tags=["🔐 Autoryzacja"])
 app.include_router(files.router, prefix="/api/files", tags=["📁 Pliki"])
+app.include_router(awards.router, prefix="/api/awards", tags=["🏆 Nagrody"])
 
 if __name__ == "__main__":
     import uvicorn
