@@ -19,16 +19,23 @@ async def tamteklipy_exception_handler(request: Request, exc: TamteKlipyExceptio
     logger.error(
         f"TamteKlipy Exception: {exc.message} | "
         f"Path: {request.url.path} | "
-        f"Method: {request.method}"
+        f"Method: {request.method} | "
+        f"Details: {exc.details}"
     )
+
+    response_content = {
+        "error": exc.__class__.__name__,
+        "message": exc.message,
+        "path": str(request.url.path)
+    }
+
+    # Dodaj details jeśli są dostępne
+    if exc.details:
+        response_content["details"] = exc.details
 
     return JSONResponse(
         status_code=exc.status_code,
-        content={
-            "error": exc.__class__.__name__,
-            "message": exc.message,
-            "path": str(request.url.path)
-        }
+        content=response_content
     )
 
 
