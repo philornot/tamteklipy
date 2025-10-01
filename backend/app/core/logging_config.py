@@ -14,6 +14,13 @@ def setup_logging(log_level: str = "INFO"):
     Args:
         log_level: Poziom logowania (DEBUG, INFO, WARNING, ERROR, CRITICAL)
     """
+    # Pobierz root logger
+    root_logger = logging.getLogger()
+
+    # Jeśli handlery już istnieją, nie dodawaj ponownie (fix dla uvicorn reload)
+    if root_logger.handlers:
+        return
+
     # Utwórz katalog na logi jeśli nie istnieje
     log_dir = Path("logs")
     log_dir.mkdir(exist_ok=True)
@@ -23,7 +30,6 @@ def setup_logging(log_level: str = "INFO"):
     date_format = "%Y-%m-%d %H:%M:%S"
 
     # Konfiguracja root loggera
-    root_logger = logging.getLogger()
     root_logger.setLevel(getattr(logging, log_level.upper()))
 
     # Handler dla konsoli (stdout)
@@ -61,5 +67,5 @@ def setup_logging(log_level: str = "INFO"):
     # Wycisz zewnętrzne biblioteki (opcjonalnie)
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
 
-    logging.info("🔧 System logowania skonfigurowany")
-    logging.info(f"📝 Logi zapisywane do: {log_dir.absolute()}")
+    logging.info("System logowania skonfigurowany")
+    logging.info(f"Logi zapisywane do: {log_dir.absolute()}")
