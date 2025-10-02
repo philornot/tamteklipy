@@ -39,23 +39,24 @@ async def tamteklipy_exception_handler(request: Request, exc: TamteKlipyExceptio
     )
 
 
-async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    """
-    Handler dla błędów walidacji Pydantic
-    """
-    logger.warning(
-        f"Validation Error: {exc.errors()} | "
-        f"Path: {request.url.path} | "
-        f"Method: {request.method}"
-    )
+def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Handler dla błędów walidacji Pydantic"""
+    errors = []
+    for error in exc.errors():
+        errors.append({
+            "loc": error["loc"],
+            "msg": error["msg"],
+            "type": error["type"]
+        })
+
+    logger.error(f"Validation Error: {errors} | Path: {request.url.path}")
 
     return JSONResponse(
-        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        status_code=422,
         content={
-            "error": "ValidationError",
-            "message": "Nieprawidłowe dane wejściowe",
-            "details": exc.errors(),
-            "path": str(request.url.path)
+            "error": "Validation Error",
+            "detail": errors,
+            "path": request.url.path
         }
     )
 
