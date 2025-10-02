@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 
 from app.core.config import settings
+from app.core.database import engine
 from app.core.error_handlers import (
     tamteklipy_exception_handler,
     validation_exception_handler,
@@ -13,7 +14,9 @@ from app.core.error_handlers import (
     generic_exception_handler
 )
 from app.core.exceptions import TamteKlipyException
+from app.core.init_db import init_db
 from app.core.logging_config import setup_logging
+from app.models import User
 from app.routers import auth, files, awards
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -80,6 +83,14 @@ async def startup_event():
     """Wykonywane przy starcie aplikacji"""
     logger.info(f"{settings.app_name} startuje...")
     logger.info(f"Environment: {settings.environment}")
+
+    # NOWE: Inicjalizuj bazę danych
+    try:
+        init_db()
+        logger.info("Baza danych gotowa")
+    except Exception as e:
+        logger.error(f"Błąd inicjalizacji bazy danych: {e}")
+
     logger.info("Dokumentacja dostępna na: http://localhost:8000/docs")
 
 
@@ -122,6 +133,21 @@ async def health_check():
         "environment": settings.environment,
         "checks": {}
     }
+
+    # Sprawdź bazę danych
+    try:
+        from app.core.database import SessionLocal
+        db = SessionLocal()
+        db.execute("SELECT 1")
+        db.close()
+        health_status["checks"]["database"] = {"status": "ok"}
+    except Exception as e:
+        logger.error(f"Database check failed: {e}")
+        health_status["checks"]["database"] = {
+            "status": "error",
+            "error": str(e)
+        }
+        health_status["status"] = "degraded"
 
     # Sprawdź dostęp do storage (tylko w produkcji/na RPi)
     if settings.environment == "production":
