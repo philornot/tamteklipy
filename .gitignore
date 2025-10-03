@@ -49,8 +49,5 @@ frontend/build/
 frontend/.env
 frontend/.env.local
 
-# Alembic
-alembic.ini
-
 # Misc
 *.pdf
