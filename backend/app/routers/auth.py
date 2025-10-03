@@ -1,82 +1,93 @@
 """
-Router dla autoryzacji - logowanie, rejestracja, tokeny JWT
+Router dla autoryzacji — logowanie, rejestracja, tokeny JWT
 """
-from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from app.core.database import get_db
+from app.core.exceptions import AuthenticationError, NotFoundError
+from app.core.security import (
+    verify_password,
+    create_access_token,
+    get_current_user_from_token
+)
+from app.models.user import User
+from app.schemas.token import Token
+from app.schemas.user import UserResponse, UserWithToken
+from fastapi import APIRouter, Depends
+from fastapi.security import OAuth2PasswordRequestForm
+from sqlalchemy.orm import Session
 
 router = APIRouter()
 
-# OAuth2 scheme do pobierania tokenu z headera
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
-
-@router.post("/login")
-async def login(form_data: OAuth2PasswordRequestForm = Depends()):
+@router.post("/login", response_model=Token)
+async def login(
+        form_data: OAuth2PasswordRequestForm = Depends(),
+        db: Session = Depends(get_db)
+):
     """
     Endpoint logowania - zwraca JWT token
+
     POST /api/auth/login
-    Body: username, password (form-data)
+    Body (form-data):
+        - username: str
+        - password: str
+
+    Returns:
+        Token: JWT access token i typ tokenu
     """
-    # TODO: Implementacja po dodaniu bazy danych i modeli
-    # 1. Sprawdź czy użytkownik istnieje
-    # 2. Zweryfikuj hasło (bcrypt)
-    # 3. Wygeneruj JWT token
-    # 4. Zwróć token
+    # Znajdź użytkownika po username
+    user = db.query(User).filter(User.username == form_data.username.lower()).first()
+
+    if not user:
+        raise AuthenticationError(
+            message="Nieprawidłowa nazwa użytkownika lub hasło",
+            details={"username": form_data.username}
+        )
+
+    # Sprawdź czy użytkownik jest aktywny
+    if not user.is_active:
+        raise AuthenticationError(
+            message="Konto jest nieaktywne",
+            details={"username": user.username}
+        )
+
+    # Zweryfikuj hasło
+    if not verify_password(form_data.password, user.hashed_password):
+        raise AuthenticationError(
+            message="Nieprawidłowa nazwa użytkownika lub hasło"
+        )
+
+    # Utwórz JWT token ze scope użytkownika
+    access_token = create_access_token(
+        user_id=user.id,
+        username=user.username,
+        scopes=user.award_scopes or []
+    )
 
     return {
-        "message": "Login endpoint - implementacja wkrótce",
-        "username": form_data.username,
-        "status": "not_implemented"
+        "access_token": access_token,
+        "token_type": "bearer"
     }
 
 
-@router.post("/register")
-async def register():
-    """
-    Endpoint rejestracji nowego użytkownika
-    POST /api/auth/register
-    Body: username, email, password
-    """
-    # TODO: Implementacja po dodaniu bazy danych
-    # 1. Sprawdź czy użytkownik nie istnieje
-    # 2. Zahashuj hasło (bcrypt)
-    # 3. Utwórz użytkownika w bazie
-    # 4. Zwróć sukces
-
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Rejestracja będzie dostępna wkrótce"
-    )
-
-
-@router.get("/me")
-async def get_current_user(token: str = Depends(oauth2_scheme)):
+@router.get("/me", response_model=UserResponse)
+async def get_current_user(
+        current_user: dict = Depends(get_current_user_from_token),
+        db: Session = Depends(get_db)
+):
     """
     Endpoint zwracający dane zalogowanego użytkownika
+
     GET /api/auth/me
     Header: Authorization: Bearer <token>
+
+    Returns:
+        UserResponse: Dane użytkownika (bez hasła)
     """
-    # TODO: Implementacja po dodaniu JWT
-    # 1. Zdekoduj token
-    # 2. Pobierz użytkownika z bazy
-    # 3. Zwróć dane użytkownika
+    user_id = current_user.get("user_id")
 
-    return {
-        "message": "User info endpoint - implementacja wkrótce",
-        "token_received": bool(token),
-        "status": "not_implemented"
-    }
+    user = db.query(User).filter(User.id == user_id).first()
 
+    if not user:
+        raise NotFoundError(resource="Użytkownik", resource_id=user_id)
 
-@router.post("/refresh")
-async def refresh_token():
-    """
-    Endpoint do odświeżania JWT tokenu
-    POST /api/auth/refresh
-    """
-    # TODO: Implementacja po dodaniu JWT
-
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Refresh token będzie dostępny wkrótce"
-    )
+    return user
