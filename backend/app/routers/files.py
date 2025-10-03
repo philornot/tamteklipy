@@ -11,6 +11,7 @@ from app.core.dependencies import get_current_user
 from app.core.exceptions import FileUploadError, ValidationError
 from app.models.clip import Clip, ClipType
 from app.models.user import User
+from app.services.thumbnail_service import generate_thumbnail, extract_video_metadata
 from fastapi import APIRouter, UploadFile, File, Depends
 from sqlalchemy.orm import Session
 
@@ -106,64 +107,79 @@ async def upload_file(
         db: Session = Depends(get_db),
         current_user: User = Depends(get_current_user)
 ):
-    """
-    Upload pliku (klip lub screenshot)
+    """Upload pliku z automatycznym generowaniem thumbnail dla video"""
 
-    POST /api/files/upload
-    Body: multipart/form-data z plikiem
-    Header: Authorization: Bearer <token>
-
-    Returns:
-        Informacje o uploadowanym pliku
-    """
     logger.info(f"Upload request from user {current_user.username}: {file.filename} ({file.content_type})")
 
     try:
-        # 1. Waliduj typ pliku
+        # 1-6. Walidacja i zapis pliku (jak wcześniej)
         clip_type, extension = validate_file_type(file.filename, file.content_type)
-
-        # 2. Przeczytaj plik do pamięci (żeby sprawdzić rozmiar)
         file_content = await file.read()
         file_size = len(file_content)
-
-        # 3. Waliduj rozmiar
         validate_file_size(file_size, clip_type)
-
-        # 4. Wygeneruj unikalną nazwę
         unique_filename = generate_unique_filename(file.filename, extension)
 
-        # 5. Określ ścieżkę zapisu
         if clip_type == ClipType.VIDEO:
             storage_dir = Path(settings.clips_path)
         else:
             storage_dir = Path(settings.screenshots_path)
 
-        # Dla developmentu (Windows) użyj lokalnego katalogu
         if settings.environment == "development":
             storage_dir = Path("uploads") / ("clips" if clip_type == ClipType.VIDEO else "screenshots")
 
-        # Utwórz katalog jeśli nie istnieje
         storage_dir.mkdir(parents=True, exist_ok=True)
-
-        # Pełna ścieżka do pliku
         file_path = storage_dir / unique_filename
 
-        # 6. Zapisz plik na dysku
         with open(file_path, "wb") as f:
             f.write(file_content)
 
         logger.info(f"File saved: {file_path}")
 
-        # 7. Zapisz do bazy danych
+        # 7. NOWE: Generuj thumbnail dla video
+        thumbnail_path = None
+        video_metadata = None
+
+        if clip_type == ClipType.VIDEO:
+            try:
+                # Wyciągnij metadane
+                video_metadata = extract_video_metadata(str(file_path))
+
+                # Ścieżka do thumbnail
+                thumbnails_dir = Path(settings.thumbnails_path)
+                if settings.environment == "development":
+                    thumbnails_dir = Path("uploads/thumbnails")
+
+                thumbnails_dir.mkdir(parents=True, exist_ok=True)
+
+                thumbnail_filename = f"{Path(unique_filename).stem}.jpg"
+                thumbnail_full_path = thumbnails_dir / thumbnail_filename
+
+                # Generuj thumbnail
+                generate_thumbnail(
+                    video_path=str(file_path),
+                    output_path=str(thumbnail_full_path),
+                    timestamp="00:00:01",
+                    width=320,
+                    quality=2
+                )
+
+                thumbnail_path = str(thumbnail_full_path)
+                logger.info(f"Thumbnail generated: {thumbnail_path}")
+
+            except Exception as e:
+                logger.warning(f"Failed to generate thumbnail: {e}")
+                # Nie przerywamy uploadu jeśli thumbnail się nie uda
+
+        # 8. Zapisz do bazy danych z metadanymi
         new_clip = Clip(
-            filename=file.filename,  # Oryginalna nazwa
-            file_path=str(file_path),  # Pełna ścieżka
-            thumbnail_path=None,  # TODO: Generowanie thumbnails
+            filename=file.filename,
+            file_path=str(file_path),
+            thumbnail_path=thumbnail_path,
             clip_type=clip_type,
             file_size=file_size,
-            duration=None,  # TODO: Ekstrakcja metadanych video
-            width=None,
-            height=None,
+            duration=video_metadata.get("duration") if video_metadata else None,
+            width=video_metadata.get("width") if video_metadata else None,
+            height=video_metadata.get("height") if video_metadata else None,
             uploader_id=current_user.id
         )
 
@@ -173,7 +189,7 @@ async def upload_file(
 
         logger.info(f"Clip created in database: ID={new_clip.id}")
 
-        return {
+        response_data = {
             "message": "Plik został przesłany pomyślnie",
             "clip_id": new_clip.id,
             "filename": file.filename,
@@ -184,8 +200,18 @@ async def upload_file(
             "uploader": current_user.username
         }
 
+        if thumbnail_path:
+            response_data["thumbnail_generated"] = True
+            response_data["thumbnail_path"] = thumbnail_path
+
+        if video_metadata:
+            response_data["duration"] = video_metadata.get("duration")
+            response_data["width"] = video_metadata.get("width")
+            response_data["height"] = video_metadata.get("height")
+
+        return response_data
+
     except (ValidationError, FileUploadError):
-        # Re-raise nasze własne wyjątki
         raise
     except Exception as e:
         logger.error(f"Upload failed: {e}", exc_info=True)
