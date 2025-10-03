@@ -7,3 +7,4 @@ uvicorn
 python-multipart
 sqlalchemy==2.0.23
 email-validator
+alembic
