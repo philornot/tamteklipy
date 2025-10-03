@@ -1,5 +1,5 @@
 """
-FastAPI dependencies - funkcje pomocnicze używane jako Depends()
+FastAPI dependencies — funkcje pomocnicze używane jako Depends()
 """
 from app.core.database import get_db
 from app.core.exceptions import NotFoundError, AuthenticationError
@@ -16,6 +16,11 @@ async def get_current_user(
     """
     Dependency do pobierania pełnego obiektu User z bazy danych
 
+    Użycie:
+        @app.get("/protected")
+        async def protected_route(user: User = Depends(get_current_user)):
+            return {"username": user.username}
+
     Args:
         current_user_data: Dane z tokenu JWT
         db: Sesja bazy danych
@@ -24,7 +29,8 @@ async def get_current_user(
         User: Obiekt użytkownika z bazy
 
     Raises:
-        HTTPException: Jeśli użytkownik nie istnieje w bazie
+        AuthenticationError: Jeśli token nieprawidłowy lub użytkownik nieaktywny
+        NotFoundError: Jeśli użytkownik nie istnieje w bazie
     """
     user_id = current_user_data.get("user_id")
 
