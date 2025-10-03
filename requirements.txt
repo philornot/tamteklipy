@@ -8,3 +8,4 @@ python-multipart
 sqlalchemy==2.0.23
 email-validator
 alembic
+aiofiles==23.2.1
