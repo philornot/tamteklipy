@@ -1,6 +1,7 @@
 # TamteKlipy Backend
 
 ## Setup
+
 ```bash
 # Zainstaluj zależności
 pip install -r requirements.txt
@@ -8,21 +9,67 @@ pip install -r requirements.txt
 # Zastosuj migracje bazy danych
 alembic upgrade head
 
-# Uruchom serwer
-python -m app.main
+# (Opcjonalnie) Seeduj bazę testowymi danymi
+python seed_database.py
 ```
 
-## Migracje bazy danych
-Zobacz szczegółową dokumentację w alembic/README_MIGRATIONS.md.
+## Seedowanie bazy danych
 
-### Podstawowe komendy
+### Podstawowe użycie
+
 ```bash
-# Utwórz migrację po zmianach w modelach
-alembic revision --autogenerate -m "Opis zmian"
+# Dodaj testowych użytkowników, klipy i nagrody
+python seed_database.py
+```
 
-# Zastosuj migracje
+### Z wyczyszczeniem bazy
+
+```bash
+# UWAGA: Usuwa wszystkie dane i tworzy od nowa
+python seed_database.py --clear
+```
+
+### Testowe konta
+
+Po seedowaniu dostępne są następujące konta:
+
+| Username | Hasło        | Uprawnienia       |
+|----------|--------------|-------------------|
+| `admin`  | `Admin123!`  | Wszystkie nagrody |
+| `gamer1` | `Gamer123!`  | epic_clip, clutch |
+| `gamer2` | `Gamer123!`  | funny, wtf        |
+| `viewer` | `Viewer123!` | funny             |
+
+### Co jest tworzone?
+
+- **4 użytkowników** z różnymi uprawnieniami
+- **4 klipy** (3 video + 1 screenshot) - bez rzeczywistych plików
+- **Losowe nagrody** przyznane do klipów
+
+## Migracje bazy danych
+
+Zobacz [alembic/README_MIGRATIONS.md](alembic/README_MIGRATIONS.md)
+
+## Development
+
+```bash
+# Uruchom serwer
+python -m app.main
+
+# Dokumentacja API
+http://localhost:8000/docs
+```
+
+```
+
+### Uruchom seed:
+
+```bash
+cd backend
+
+# Zastosuj migracje najpierw
 alembic upgrade head
 
-# Sprawdź status
-alembic current
+# Seeduj bazę
+python seed_database.py
 ```
