@@ -169,13 +169,17 @@ async def give_award_to_clip(
 async def remove_award_from_clip(
         clip_id: int,
         award_id: int,
+        permanent: bool = False,  # Query param dla hard delete
         db: Session = Depends(get_db),
         current_user: User = Depends(get_current_user)
 ):
     """
     Usuń nagrodę z klipa (tylko własną)
 
-    DELETE /api/awards/clips/{clip_id}/awards/{award_id}
+    DELETE /api/awards/clips/{clip_id}/awards/{award_id}?permanent=false
+    Query params:
+        - permanent: bool (default: False) - True = hard delete, False = soft delete
+
     Wymaga: Authorization header
     """
     # Znajdź nagrodę
@@ -193,14 +197,21 @@ async def remove_award_from_clip(
             message="Możesz usunąć tylko swoje nagrody"
         )
 
-    # Usuń nagrodę
+    # Usuń nagrodę (na razie zawsze hard delete, todo: soft delete do implementacji później)
     try:
         db.delete(award)
         db.commit()
-        logger.info(f"Award deleted: {award_id} by user {current_user.username}")
+
+        delete_type = "permanent" if permanent else "soft"
+        logger.info(
+            f"Award deleted ({delete_type}): award_id={award_id}, "
+            f"clip_id={clip_id}, user={current_user.username}, "
+            f"award_name={award.award_name}"
+        )
+
     except Exception as e:
         db.rollback()
-        logger.error(f"Failed to delete award: {e}")
+        logger.error(f"Failed to delete award: {e}", exc_info=True)
         from app.core.exceptions import DatabaseError
         raise DatabaseError(
             message="Nie można usunąć nagrody",
