@@ -2,6 +2,7 @@
 Router dla autoryzacji — logowanie, rejestracja, tokeny JWT
 """
 from app.core.database import get_db
+from app.core.dependencies import get_current_user
 from app.core.exceptions import AuthenticationError, NotFoundError
 from app.core.security import hash_password
 from app.core.security import (
@@ -69,30 +70,6 @@ async def login(
         "access_token": access_token,
         "token_type": "bearer"
     }
-
-
-@router.get("/me", response_model=UserResponse)
-async def get_current_user(
-        current_user: dict = Depends(get_current_user_from_token),
-        db: Session = Depends(get_db)
-):
-    """
-    Endpoint zwracający dane zalogowanego użytkownika
-
-    GET /api/auth/me
-    Header: Authorization: Bearer <token>
-
-    Returns:
-        UserResponse: Dane użytkownika (bez hasła)
-    """
-    user_id = current_user.get("user_id")
-
-    user = db.query(User).filter(User.id == user_id).first()
-
-    if not user:
-        raise NotFoundError(resource="Użytkownik", resource_id=user_id)
-
-    return user
 
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
