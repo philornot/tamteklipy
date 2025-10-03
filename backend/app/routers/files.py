@@ -15,8 +15,10 @@ from app.core.dependencies import get_current_user
 from app.core.exceptions import FileUploadError, ValidationError
 from app.models.clip import Clip, ClipType
 from app.models.user import User
+from app.schemas.clip import ClipResponse, ClipListResponse
 from app.services.thumbnail_service import generate_thumbnail, extract_video_metadata
 from fastapi import APIRouter, UploadFile, File, Depends
+from sqlalchemy import desc, asc
 from sqlalchemy.orm import Session
 
 router = APIRouter()
@@ -291,42 +293,119 @@ async def upload_file(
         )
 
 
-@router.get("/clips")
+@router.get("/clips", response_model=ClipListResponse)
 async def list_clips(
-        skip: int = 0,
+        page: int = 1,
         limit: int = 50,
+        sort_by: str = "created_at",
+        sort_order: str = "desc",
+        clip_type: Optional[str] = None,
+        uploader_id: Optional[int] = None,
         db: Session = Depends(get_db),
         current_user: User = Depends(get_current_user)
 ):
     """
-    Listowanie klipów z paginacją
-    GET /api/files/clips?skip=0&limit=50
+    Listowanie klipów z paginacją, sortowaniem i filtrowaniem
+
+    GET /api/files/clips?page=1&limit=50&sort_by=created_at&sort_order=desc&clip_type=video
+
+    Query params:
+        - page: Numer strony (default: 1)
+        - limit: Liczba elementów na stronę (default: 50, max: 100)
+        - sort_by: Pole sortowania (created_at, filename, file_size, duration)
+        - sort_order: Kierunek sortowania (asc, desc)
+        - clip_type: Filtr typu (video, screenshot)
+        - uploader_id: Filtr po uploaderze
     """
-    clips = db.query(Clip).filter(
-        Clip.is_deleted == False
-    ).order_by(
-        Clip.created_at.desc()
-    ).offset(skip).limit(limit).all()
+    # Walidacja parametrów
+    if page < 1:
+        page = 1
 
-    total = db.query(Clip).filter(Clip.is_deleted == False).count()
+    if limit < 1:
+        limit = 50
+    elif limit > 100:
+        limit = 100
 
-    return {
-        "clips": [
-            {
-                "id": clip.id,
-                "filename": clip.filename,
-                "clip_type": clip.clip_type.value,
-                "file_size_mb": clip.file_size_mb,
-                "uploader": clip.uploader.username,
-                "created_at": clip.created_at.isoformat(),
-                "award_count": clip.award_count
-            }
-            for clip in clips
-        ],
-        "total": total,
-        "skip": skip,
-        "limit": limit
+    # Oblicz offset
+    offset = (page - 1) * limit
+
+    # Bazowe query
+    query = db.query(Clip).filter(Clip.is_deleted == False)
+
+    # Filtrowanie po typie
+    if clip_type:
+        try:
+            filter_type = ClipType(clip_type.lower())
+            query = query.filter(Clip.clip_type == filter_type)
+        except ValueError:
+            raise ValidationError(
+                message=f"Nieprawidłowy typ klipa: {clip_type}",
+                field="clip_type",
+                details={"allowed_values": ["video", "screenshot"]}
+            )
+
+    # Filtrowanie po uploaderze
+    if uploader_id:
+        query = query.filter(Clip.uploader_id == uploader_id)
+
+    # Sortowanie
+    allowed_sort_fields = {
+        "created_at": Clip.created_at,
+        "filename": Clip.filename,
+        "file_size": Clip.file_size,
+        "duration": Clip.duration
     }
+
+    if sort_by not in allowed_sort_fields:
+        raise ValidationError(
+            message=f"Nieprawidłowe pole sortowania: {sort_by}",
+            field="sort_by",
+            details={"allowed_values": list(allowed_sort_fields.keys())}
+        )
+
+    sort_field = allowed_sort_fields[sort_by]
+
+    if sort_order.lower() == "asc":
+        query = query.order_by(asc(sort_field))
+    else:
+        query = query.order_by(desc(sort_field))
+
+    # Pobierz total przed paginacją
+    total = query.count()
+
+    # Zastosuj paginację
+    clips = query.offset(offset).limit(limit).all()
+
+    # Oblicz liczbę stron
+    pages = (total + limit - 1) // limit
+
+    # Konwertuj do response
+    clips_response = [
+        ClipResponse(
+            id=clip.id,
+            filename=clip.filename,
+            clip_type=clip.clip_type.value,
+            file_size=clip.file_size,
+            file_size_mb=clip.file_size_mb,
+            duration=clip.duration,
+            width=clip.width,
+            height=clip.height,
+            created_at=clip.created_at,
+            uploader_username=clip.uploader.username,
+            uploader_id=clip.uploader_id,
+            award_count=clip.award_count,
+            has_thumbnail=clip.thumbnail_path is not None
+        )
+        for clip in clips
+    ]
+
+    return ClipListResponse(
+        clips=clips_response,
+        total=total,
+        page=page,
+        limit=limit,
+        pages=pages
+    )
 
 
 def check_disk_space(storage_path: Path, required_bytes: int) -> bool:
