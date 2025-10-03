@@ -2,6 +2,7 @@
 Router dla zarządzania plikami — upload, download, listowanie klipów i screenshotów
 """
 import logging
+import shutil
 import uuid
 from pathlib import Path
 
@@ -115,7 +116,7 @@ async def upload_file(
     logger.info(f"Upload request from user {current_user.username}: {file.filename} ({file.content_type})")
 
     try:
-        # 1-6. Walidacja i zapis pliku (jak wcześniej)
+        # Walidacja i zapis pliku (jak wcześniej)
         clip_type, extension = validate_file_type(file.filename, file.content_type)
         file_content = await file.read()
         file_size = len(file_content)
@@ -133,12 +134,15 @@ async def upload_file(
         storage_dir.mkdir(parents=True, exist_ok=True)
         file_path = storage_dir / unique_filename
 
+        # Sprawdź wolne miejsce na dysku
+        check_disk_space(storage_dir, file_size)
+
         with open(file_path, "wb") as f:
             f.write(file_content)
 
         logger.info(f"File saved: {file_path}")
 
-        # 7. NOWE: Generuj thumbnail dla video
+        # 7. Generuj thumbnail dla video
         thumbnail_path = None
         video_metadata = None
 
@@ -261,3 +265,42 @@ async def list_clips(
         "skip": skip,
         "limit": limit
     }
+
+
+def check_disk_space(storage_path: Path, required_bytes: int) -> bool:
+    """
+    Sprawdza czy jest wystarczająco miejsca na dysku
+
+    Args:
+        storage_path: Ścieżka do katalogu storage
+        required_bytes: Wymagana ilość bajtów
+
+    Returns:
+        bool: True jeśli jest miejsce, False jeśli nie ma
+
+    Raises:
+        StorageError: Jeśli nie ma wystarczająco miejsca
+    """
+    try:
+        stat = shutil.disk_usage(storage_path)
+        free_space = stat.free
+
+        # Zostawmy przynajmniej 1GB wolnego miejsca jako bufor
+        SAFETY_BUFFER = 1 * 1024 * 1024 * 1024  # 1 GB
+
+        if free_space - required_bytes < SAFETY_BUFFER:
+            free_mb = free_space / (1024 * 1024)
+            required_mb = required_bytes / (1024 * 1024)
+
+            from app.core.exceptions import StorageError
+            raise StorageError(
+                message=f"Brak miejsca na dysku: dostępne {free_mb:.0f}MB, wymagane {required_mb:.0f}MB",
+                path=str(storage_path)
+            )
+
+        return True
+
+    except Exception as e:
+        logger.error(f"Failed to check disk space: {e}")
+        # Nie przerywamy uploadu, jeśli nie możemy sprawdzić miejsca
+        return True
