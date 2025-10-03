@@ -113,18 +113,42 @@ async def upload_file(
         db: Session = Depends(get_db),
         current_user: User = Depends(get_current_user)
 ):
-    """Upload pliku z automatycznym generowaniem thumbnail dla video"""
-
-    logger.info(f"Upload request from user {current_user.username}: {file.filename} ({file.content_type})")
+    """
+    Upload pliku z pełną walidacją i error handling
+    """
+    logger.info(f"Upload from {current_user.username}: {file.filename} ({file.content_type})")
 
     try:
-        # Walidacja i zapis pliku (jak wcześniej)
-        clip_type, extension = validate_file_type(file.filename, file.content_type)
-        file_content = await file.read()
-        file_size = len(file_content)
-        validate_file_size(file_size, clip_type)
+        # 1. Waliduj typ pliku
+        try:
+            clip_type, extension = validate_file_type(file.filename, file.content_type)
+        except ValidationError as e:
+            logger.warning(f"Invalid file type: {file.content_type}")
+            raise
+
+        # 2. Przeczytaj plik
+        try:
+            file_content = await file.read()
+            file_size = len(file_content)
+        except Exception as e:
+            logger.error(f"Failed to read file: {e}")
+            raise FileUploadError(
+                message="Nie można odczytać pliku",
+                filename=file.filename,
+                reason="File read error"
+            )
+
+        # 3. Waliduj rozmiar
+        try:
+            validate_file_size(file_size, clip_type)
+        except ValidationError as e:
+            logger.warning(f"File too large: {file_size} bytes")
+            raise
+
+        # 4. Wygeneruj unikalną nazwę
         unique_filename = generate_unique_filename(file.filename, extension)
 
+        # 5. Określ ścieżkę
         if clip_type == ClipType.VIDEO:
             storage_dir = Path(settings.clips_path)
         else:
@@ -133,27 +157,47 @@ async def upload_file(
         if settings.environment == "development":
             storage_dir = Path("uploads") / ("clips" if clip_type == ClipType.VIDEO else "screenshots")
 
-        storage_dir.mkdir(parents=True, exist_ok=True)
+        # 6. Sprawdź miejsce na dysku
+        try:
+            check_disk_space(storage_dir, file_size)
+        except StorageError as e:
+            logger.error(f"Insufficient disk space: {e}")
+            raise
+
+        # 7. Utwórz katalog
+        try:
+            storage_dir.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            logger.error(f"Failed to create directory: {e}")
+            raise StorageError(
+                message="Nie można utworzyć katalogu",
+                path=str(storage_dir)
+            )
+
         file_path = storage_dir / unique_filename
 
-        # Sprawdź wolne miejsce na dysku
-        check_disk_space(storage_dir, file_size)
+        # 8. Zapisz plik
+        try:
+            with open(file_path, "wb") as f:
+                f.write(file_content)
+            logger.info(f"File saved: {file_path}")
+        except Exception as e:
+            logger.error(f"Failed to write file: {e}")
+            raise StorageError(
+                message="Nie można zapisać pliku na dysku",
+                path=str(file_path)
+            )
 
-        with open(file_path, "wb") as f:
-            f.write(file_content)
-
-        logger.info(f"File saved: {file_path}")
-
-        # 7. Generuj thumbnail dla video
+        # 9. Generuj thumbnail dla video
         thumbnail_path = None
         video_metadata = None
 
         if clip_type == ClipType.VIDEO:
             try:
-                # Wyciągnij metadane
+                from app.services.thumbnail_service import generate_thumbnail, extract_video_metadata
+
                 video_metadata = extract_video_metadata(str(file_path))
 
-                # Ścieżka do thumbnail
                 thumbnails_dir = Path(settings.thumbnails_path)
                 if settings.environment == "development":
                     thumbnails_dir = Path("uploads/thumbnails")
@@ -163,7 +207,6 @@ async def upload_file(
                 thumbnail_filename = f"{Path(unique_filename).stem}.jpg"
                 thumbnail_full_path = thumbnails_dir / thumbnail_filename
 
-                # Generuj thumbnail
                 generate_thumbnail(
                     video_path=str(file_path),
                     output_path=str(thumbnail_full_path),
@@ -176,56 +219,73 @@ async def upload_file(
                 logger.info(f"Thumbnail generated: {thumbnail_path}")
 
             except Exception as e:
-                logger.warning(f"Failed to generate thumbnail: {e}")
-                # Nie przerywamy uploadu jeśli thumbnail się nie uda
+                logger.warning(f"Thumbnail generation failed: {e}")
+                # Kontynuuj mimo błędu thumbnail
 
-        # 8. Zapisz do bazy danych z metadanymi
-        new_clip = Clip(
-            filename=file.filename,
-            file_path=str(file_path),
-            thumbnail_path=thumbnail_path,
-            clip_type=clip_type,
-            file_size=file_size,
-            duration=video_metadata.get("duration") if video_metadata else None,
-            width=video_metadata.get("width") if video_metadata else None,
-            height=video_metadata.get("height") if video_metadata else None,
-            uploader_id=current_user.id
-        )
+        # 10. Zapisz do bazy
+        try:
+            new_clip = Clip(
+                filename=file.filename,
+                file_path=str(file_path),
+                thumbnail_path=thumbnail_path,
+                clip_type=clip_type,
+                file_size=file_size,
+                duration=video_metadata.get("duration") if video_metadata else None,
+                width=video_metadata.get("width") if video_metadata else None,
+                height=video_metadata.get("height") if video_metadata else None,
+                uploader_id=current_user.id
+            )
 
-        db.add(new_clip)
-        db.commit()
-        db.refresh(new_clip)
+            db.add(new_clip)
+            db.commit()
+            db.refresh(new_clip)
 
-        logger.info(f"Clip created in database: ID={new_clip.id}")
+            logger.info(f"Clip created: ID={new_clip.id}")
 
-        response_data = {
+        except Exception as e:
+            logger.error(f"Database error: {e}")
+            # Usuń plik jeśli zapis do bazy się nie udał
+            try:
+                file_path.unlink()
+                if thumbnail_path:
+                    Path(thumbnail_path).unlink()
+            except:
+                pass
+
+            from app.core.exceptions import DatabaseError
+            raise DatabaseError(
+                message="Nie można zapisać do bazy danych",
+                operation="create_clip"
+            )
+
+        # 11. Zwróć sukces
+        response = {
             "message": "Plik został przesłany pomyślnie",
             "clip_id": new_clip.id,
             "filename": file.filename,
-            "unique_filename": unique_filename,
-            "file_size": file_size,
             "file_size_mb": round(file_size / (1024 * 1024), 2),
             "clip_type": clip_type.value,
-            "uploader": current_user.username
+            "uploader": current_user.username,
+            "created_at": new_clip.created_at.isoformat()
         }
 
         if thumbnail_path:
-            response_data["thumbnail_generated"] = True
-            response_data["thumbnail_path"] = thumbnail_path
+            response["thumbnail_generated"] = True
 
         if video_metadata:
-            response_data["duration"] = video_metadata.get("duration")
-            response_data["width"] = video_metadata.get("width")
-            response_data["height"] = video_metadata.get("height")
+            response["duration"] = video_metadata.get("duration")
+            response["resolution"] = f"{video_metadata.get('width')}x{video_metadata.get('height')}"
 
-        return response_data
+        return response
 
-    except (ValidationError, FileUploadError):
+    except (ValidationError, FileUploadError, StorageError, DatabaseError):
+        # Nasze własne wyjątki - przepuść dalej
         raise
     except Exception as e:
-        logger.error(f"Upload failed: {e}", exc_info=True)
+        # Nieoczekiwany błąd
+        logger.error(f"Unexpected upload error: {e}", exc_info=True)
         raise FileUploadError(
-            message="Błąd podczas uploadu pliku",
+            message="Nieoczekiwany błąd podczas uploadu",
             filename=file.filename,
             reason=str(e)
         )
