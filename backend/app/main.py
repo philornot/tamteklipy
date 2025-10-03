@@ -18,7 +18,7 @@ from app.core.init_db import init_db
 from app.core.logging_config import setup_logging
 from app.models import User
 from app.routers import auth, files, awards
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Depends
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
@@ -178,6 +178,55 @@ async def health_check():
         }
 
     return health_status
+
+
+from app.core.dependencies import (
+    get_current_user,
+    require_scope,
+    require_any_scope,
+    require_all_scopes
+)
+
+
+# TESTOWE endpointy - usuniemy po testach
+@app.get("/test/protected", tags=["Test Auth"])
+async def test_protected(user: User = Depends(get_current_user)):
+    """Test endpointu chronionego - wymaga tokenu"""
+    return {
+        "message": "Jesteś zalogowany!",
+        "user_id": user.id,
+        "username": user.username,
+        "scopes": user.award_scopes
+    }
+
+
+@app.get("/test/scope-single", tags=["Test Auth"], dependencies=[Depends(require_scope("award:epic_clip"))])
+async def test_single_scope(user: User = Depends(get_current_user)):
+    """Test pojedynczego scope - wymaga 'award:epic_clip'"""
+    return {
+        "message": "Masz uprawnienie 'award:epic_clip'!",
+        "username": user.username
+    }
+
+
+@app.get("/test/scope-any", tags=["Test Auth"],
+         dependencies=[Depends(require_any_scope(["award:funny", "award:clutch"]))])
+async def test_any_scope(user: User = Depends(get_current_user)):
+    """Test any scope - wymaga 'award:funny' LUB 'award:clutch'"""
+    return {
+        "message": "Masz przynajmniej jedno z wymaganych uprawnień!",
+        "username": user.username
+    }
+
+
+@app.get("/test/scope-all", tags=["Test Auth"],
+         dependencies=[Depends(require_all_scopes(["award:epic_clip", "award:funny"]))])
+async def test_all_scopes(user: User = Depends(get_current_user)):
+    """Test all scopes - wymaga 'award:epic_clip' I 'award:funny'"""
+    return {
+        "message": "Masz wszystkie wymagane uprawnienia!",
+        "username": user.username
+    }
 
 
 # Rejestracja routerów
