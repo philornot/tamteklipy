@@ -47,6 +47,100 @@ AWARD_DEFINITIONS = {
 }
 
 
+@router.get("/user/{username}", response_model=dict)
+async def get_user_awards(
+        username: str,
+        page: int = 1,
+        limit: int = 20,
+        sort_by: str = "awarded_at",
+        sort_order: str = "desc",
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user)
+):
+    """
+    Pobierz wszystkie nagrody przyznane przez użytkownika
+
+    GET /api/awards/user/{username}?page=1&limit=20&sort_by=awarded_at&sort_order=desc
+    """
+    # Znajdź użytkownika
+    user = db.query(User).filter(User.username == username.lower()).first()
+
+    if not user:
+        raise NotFoundError(resource="Użytkownik", resource_id=username)
+
+    # Walidacja paginacji
+    if page < 1:
+        page = 1
+    if limit < 1 or limit > 100:
+        limit = 20
+
+    offset = (page - 1) * limit
+
+    # Bazowe query z joinami
+    query = db.query(Award).options(
+        joinedload(Award.clip).joinedload(Clip.uploader),
+        joinedload(Award.user)
+    ).filter(
+        Award.user_id == user.id
+    ).join(
+        Clip, Award.clip_id == Clip.id
+    ).filter(
+        Clip.is_deleted == False
+    )
+
+    # Sortowanie
+    sort_fields = {
+        "awarded_at": Award.awarded_at,
+        "clip_id": Award.clip_id,
+        "award_name": Award.award_name
+    }
+
+    if sort_by not in sort_fields:
+        sort_by = "awarded_at"
+
+    sort_field = sort_fields[sort_by]
+
+    if sort_order.lower() == "asc":
+        query = query.order_by(asc(sort_field))
+    else:
+        query = query.order_by(desc(sort_field))
+
+    # Total przed paginacją
+    total = query.count()
+
+    # Pobierz z paginacją
+    awards = query.offset(offset).limit(limit).all()
+
+    # Przygotuj response
+    awards_response = [
+        {
+            "id": award.id,
+            "award_name": award.award_name,
+            "awarded_at": award.awarded_at.isoformat(),
+            "clip": {
+                "id": award.clip.id,
+                "filename": award.clip.filename,
+                "clip_type": award.clip.clip_type.value,
+                "uploader_username": award.clip.uploader.username,
+                "created_at": award.clip.created_at.isoformat()
+            }
+        }
+        for award in awards
+    ]
+
+    pages = (total + limit - 1) // limit
+
+    return {
+        "username": user.username,
+        "user_id": user.id,
+        "total_awards": total,
+        "page": page,
+        "limit": limit,
+        "pages": pages,
+        "awards": awards_response
+    }
+
+
 @router.get("/my-awards", response_model=MyAwardsResponse)
 async def get_my_awards(current_user: User = Depends(get_current_user)):
     """
