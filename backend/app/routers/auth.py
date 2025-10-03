@@ -134,3 +134,15 @@ async def register(
     db.refresh(new_user)
 
     return new_user
+
+
+# Endpoint zwracający aktualnego użytkownika na podstawie tokenu JWT
+@router.get("/me", response_model=UserResponse)
+async def read_me(current_user: User = Depends(get_current_user)):
+    """
+    Zwraca dane aktualnie zalogowanego użytkownika.
+    Wymaga nagłówka Authorization: Bearer <token>
+
+    GET /api/auth/me
+    """
+    return current_user
