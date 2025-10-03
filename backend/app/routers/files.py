@@ -16,7 +16,7 @@ from app.models.clip import Clip, ClipType
 from app.models.user import User
 from app.schemas.clip import ClipResponse, ClipListResponse, ClipDetailResponse
 from app.services.thumbnail_service import generate_thumbnail, extract_video_metadata
-from fastapi import APIRouter, UploadFile, File, Depends
+from fastapi import APIRouter, UploadFile, File, Depends, Request
 from fastapi.responses import FileResponse
 from sqlalchemy import desc, asc
 from sqlalchemy.orm import Session
@@ -545,6 +545,106 @@ async def get_thumbnail(
         media_type="image/jpeg",
         headers={
             "Cache-Control": "public, max-age=3600"  # Cache na 1h
+        }
+    )
+
+
+@router.get("/stream/{clip_id}")
+async def stream_video(
+        clip_id: int,
+        request: Request,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user)
+):
+    """
+    Stream video z obsługą Range requests (dla video player)
+
+    GET /api/files/stream/{clip_id}
+    Header: Range: bytes=0-1024
+
+    Obsługuje partial content requests dla video streaming
+    """
+    # Znajdź klip
+    clip = db.query(Clip).filter(
+        Clip.id == clip_id,
+        Clip.is_deleted == False,
+        Clip.clip_type == ClipType.VIDEO
+    ).first()
+
+    if not clip:
+        raise NotFoundError(resource="Video klip", resource_id=clip_id)
+
+    file_path = Path(clip.file_path)
+
+    if not file_path.exists():
+        raise StorageError(
+            message="Plik nie został znaleziony",
+            path=str(file_path)
+        )
+
+    file_size = file_path.stat().st_size
+
+    # Sprawdź czy request ma header Range
+    range_header = request.headers.get("range")
+
+    if not range_header:
+        # Brak Range header - zwróć cały plik
+        return FileResponse(
+            path=str(file_path),
+            media_type="video/mp4",
+            headers={
+                "Accept-Ranges": "bytes",
+                "Content-Length": str(file_size)
+            }
+        )
+
+    # Parse Range header: "bytes=0-1024"
+    try:
+        range_str = range_header.replace("bytes=", "")
+        start_str, end_str = range_str.split("-")
+
+        start = int(start_str) if start_str else 0
+        end = int(end_str) if end_str else file_size - 1
+
+        # Waliduj range
+        if start >= file_size or end >= file_size or start > end:
+            raise ValueError("Invalid range")
+
+        chunk_size = end - start + 1
+
+    except (ValueError, AttributeError):
+        raise ValidationError(
+            message="Nieprawidłowy header Range",
+            field="Range",
+            details={"range": range_header}
+        )
+
+    # Funkcja generatora dla streaming
+    async def file_iterator():
+        async with aiofiles.open(file_path, mode='rb') as f:
+            await f.seek(start)
+            remaining = chunk_size
+
+            while remaining > 0:
+                read_size = min(8192, remaining)  # 8KB chunks
+                data = await f.read(read_size)
+
+                if not data:
+                    break
+
+                remaining -= len(data)
+                yield data
+
+    # Zwróć partial content response (206)
+    return StreamingResponse(
+        file_iterator(),
+        status_code=206,  # Partial Content
+        media_type="video/mp4",
+        headers={
+            "Content-Range": f"bytes {start}-{end}/{file_size}",
+            "Accept-Ranges": "bytes",
+            "Content-Length": str(chunk_size),
+            "Cache-Control": "public, max-age=3600"
         }
     )
 
