@@ -6,6 +6,7 @@ import uuid
 from pathlib import Path
 
 from app.core.config import settings
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.core.exceptions import FileUploadError, ValidationError
@@ -34,7 +35,7 @@ ALLOWED_IMAGE_TYPES = {
 ALLOWED_MIME_TYPES = {**ALLOWED_VIDEO_TYPES, **ALLOWED_IMAGE_TYPES}
 
 # Maksymalne rozmiary plików (w bajtach)
-MAX_VIDEO_SIZE = 100 * 1024 * 1024  # 100 MB
+MAX_VIDEO_SIZE = 500 * 1024 * 1024  # 500 MB
 MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10 MB
 
 
@@ -68,7 +69,7 @@ def validate_file_type(filename: str, content_type: str) -> tuple[ClipType, str]
 
 def validate_file_size(file_size: int, clip_type: ClipType):
     """Waliduje rozmiar pliku"""
-    max_size = MAX_VIDEO_SIZE if clip_type == ClipType.VIDEO else MAX_IMAGE_SIZE
+    max_size = settings.max_video_size_bytes if clip_type == ClipType.VIDEO else settings.max_image_size_bytes
 
     if file_size > max_size:
         max_size_mb = max_size / (1024 * 1024)
@@ -78,7 +79,9 @@ def validate_file_size(file_size: int, clip_type: ClipType):
             field="file",
             details={
                 "max_size_bytes": max_size,
-                "actual_size_bytes": file_size
+                "actual_size_bytes": file_size,
+                "max_size_mb": max_size_mb,
+                "actual_size_mb": actual_size_mb
             }
         )
 

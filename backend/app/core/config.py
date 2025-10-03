@@ -28,6 +28,18 @@ class Settings(BaseSettings):
     thumbnails_path: str = "/mnt/tamteklipy/thumbnails"
     metadata_path: str = "/mnt/tamteklipy/metadata"
 
+    # File upload limits
+    max_video_size_mb: int = 500
+    max_image_size_mb: int = 10
+
+    @property
+    def max_video_size_bytes(self) -> int:
+        return self.max_video_size_mb * 1024 * 1024
+
+    @property
+    def max_image_size_bytes(self) -> int:
+        return self.max_image_size_mb * 1024 * 1024
+
     # CORS
     allowed_origins: str = "http://localhost:5173,http://localhost:3000"
 
