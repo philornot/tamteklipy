@@ -4,7 +4,7 @@ Inicjalizacja bazy danych - tworzenie tabel
 import logging
 
 from app.core.database import engine, Base, check_database_connection, get_database_info
-from app.models import User  # Import wszystkich modeli
+from app.models import User, Clip, Award
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +41,5 @@ def drop_db():
 
 
 if __name__ == "__main__":
-    # Możesz uruchomić ten skrypt bezpośrednio
     logging.basicConfig(level=logging.INFO)
     init_db()
