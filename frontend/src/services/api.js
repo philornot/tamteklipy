@@ -26,4 +26,18 @@ api.interceptors.request.use(
   }
 );
 
+// Response interceptor - handle 401
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      // Token invalid/expired - clear i redirect
+      localStorage.removeItem("access_token");
+      localStorage.removeItem("user");
+      window.location.href = "/login";
+    }
+    return Promise.reject(error);
+  }
+);
+
 export default api;
