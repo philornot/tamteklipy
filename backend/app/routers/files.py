@@ -2,11 +2,13 @@
 Router dla zarządzania plikami — upload, download, listowanie klipów i screenshotów
 """
 import hashlib
+import io
 import logging
 import shutil
 import uuid
+import zipfile
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 import aiofiles
 from app.core.config import settings
@@ -20,6 +22,7 @@ from app.schemas.clip import ClipResponse, ClipListResponse, ClipDetailResponse
 from app.services.thumbnail_service import generate_thumbnail, extract_video_metadata
 from fastapi import APIRouter, UploadFile, File, Depends, Request
 from fastapi.responses import FileResponse, StreamingResponse
+from pydantic import BaseModel, Field
 from sqlalchemy import desc, asc
 from sqlalchemy.orm import Session
 
@@ -513,6 +516,143 @@ async def download_clip(
         headers={
             "Content-Disposition": f'attachment; filename="{clip.filename}"',
             "Accept-Ranges": "bytes"  # Informuje że wspieramy range requests
+        }
+    )
+
+
+class BulkDownloadRequest(BaseModel):
+    """Request body dla bulk download"""
+    clip_ids: List[int] = Field(..., min_items=1, max_items=50)
+
+
+@router.post("/download-bulk")
+async def download_bulk(
+        request: BulkDownloadRequest,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user)
+):
+    """
+    Pobierz wiele plików jako archiwum ZIP
+
+    POST /api/files/download-bulk
+    Body: {"clip_ids": [1, 2, 3]}
+
+    Zwraca archiwum ZIP ze wszystkimi wybranymi plikami
+    Maksymalnie 50 plików na raz
+    """
+    clip_ids = request.clip_ids
+
+    # Walidacja liczby plików
+    if len(clip_ids) > 50:
+        raise ValidationError(
+            message="Zbyt wiele plików - maksymalnie 50 naraz",
+            field="clip_ids",
+            details={"requested": len(clip_ids), "max": 50}
+        )
+
+    # Pobierz klipy z bazy
+    clips = db.query(Clip).filter(
+        Clip.id.in_(clip_ids),
+        Clip.is_deleted == False
+    ).all()
+
+    if not clips:
+        raise NotFoundError(resource="Klipy", resource_id=None)
+
+    found_ids = {clip.id for clip in clips}
+    missing_ids = set(clip_ids) - found_ids
+
+    if missing_ids:
+        logger.warning(f"Missing clip IDs: {missing_ids}")
+
+    # Sprawdź uprawnienia dla każdego klipa
+    accessible_clips = []
+    for clip in clips:
+        if can_access_clip(clip, current_user):
+            accessible_clips.append(clip)
+
+    if not accessible_clips:
+        raise AuthorizationError(
+            message="Nie masz dostępu do żadnego z wybranych plików"
+        )
+
+    # Sprawdź czy wszystkie pliki istnieją na dysku
+    existing_clips = []
+    total_size = 0
+
+    for clip in accessible_clips:
+        file_path = Path(clip.file_path)
+        if file_path.exists():
+            existing_clips.append(clip)
+            total_size += clip.file_size
+        else:
+            logger.error(f"File not found: {file_path}")
+
+    if not existing_clips:
+        raise StorageError(
+            message="Żaden z plików nie został znaleziony na dysku"
+        )
+
+    # Limit całkowitego rozmiaru (1GB)
+    MAX_TOTAL_SIZE = 1 * 1024 * 1024 * 1024  # 1 GB
+
+    if total_size > MAX_TOTAL_SIZE:
+        raise ValidationError(
+            message=f"Całkowity rozmiar plików przekracza limit: {total_size / (1024 ** 3):.2f}GB (max: 1GB)",
+            field="clip_ids",
+            details={
+                "total_size_bytes": total_size,
+                "max_size_bytes": MAX_TOTAL_SIZE
+            }
+        )
+
+    logger.info(f"Creating ZIP archive with {len(existing_clips)} files, total size: {total_size / (1024 ** 2):.2f}MB")
+
+    # Generator do streamowania ZIP
+    async def zip_generator():
+        """
+        Generator który tworzy ZIP w locie i streamuje do klienta
+        """
+        # Użyj BytesIO jako temporary buffer
+        buffer = io.BytesIO()
+
+        with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+            for clip in existing_clips:
+                file_path = Path(clip.file_path)
+
+                # Użyj oryginalnej nazwy pliku w ZIP
+                # Dodaj ID żeby uniknąć kolizji nazw
+                filename_in_zip = f"{clip.id}_{clip.filename}"
+
+                try:
+                    # Dodaj plik do ZIP
+                    zip_file.write(file_path, arcname=filename_in_zip)
+                    logger.debug(f"Added to ZIP: {filename_in_zip}")
+
+                except Exception as e:
+                    logger.error(f"Failed to add file to ZIP: {file_path}, error: {e}")
+                    # Kontynuuj z pozostałymi plikami
+
+        # Przenieś wskaźnik na początek bufora
+        buffer.seek(0)
+
+        # Streamuj ZIP w chunkach
+        while True:
+            chunk = buffer.read(8192)  # 8KB chunks
+            if not chunk:
+                break
+            yield chunk
+
+    # Wygeneruj nazwę archiwum
+    from datetime import datetime
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    zip_filename = f"tamteklipy_{timestamp}.zip"
+
+    return StreamingResponse(
+        zip_generator(),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{zip_filename}"',
         }
     )
 
