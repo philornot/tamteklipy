@@ -17,6 +17,7 @@ from app.models.user import User
 from app.schemas.clip import ClipResponse, ClipListResponse, ClipDetailResponse
 from app.services.thumbnail_service import generate_thumbnail, extract_video_metadata
 from fastapi import APIRouter, UploadFile, File, Depends
+from fastapi.responses import FileResponse
 from sqlalchemy import desc, asc
 from sqlalchemy.orm import Session
 
@@ -455,6 +456,96 @@ async def get_clip(
         awards=awards_info,
         thumbnail_url=f"/api/files/thumbnails/{clip.id}" if clip.thumbnail_path else None,
         download_url=f"/api/files/download/{clip.id}"
+    )
+
+
+@router.get("/download/{clip_id}")
+async def download_clip(
+        clip_id: int,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user)
+):
+    """
+    Pobierz plik klipa
+
+    GET /api/files/download/{clip_id}
+
+    Zwraca plik z odpowiednimi headerami Content-Type i Content-Disposition
+    """
+    # Znajdź klip w bazie
+    clip = db.query(Clip).filter(
+        Clip.id == clip_id,
+        Clip.is_deleted == False
+    ).first()
+
+    if not clip:
+        raise NotFoundError(resource="Klip", resource_id=clip_id)
+
+    # Sprawdź czy plik istnieje
+    file_path = Path(clip.file_path)
+
+    if not file_path.exists():
+        logger.error(f"File not found on disk: {file_path}")
+        raise StorageError(
+            message="Plik nie został znaleziony na dysku",
+            path=str(file_path)
+        )
+
+    # Określ MIME type
+    if clip.clip_type == ClipType.VIDEO:
+        media_type = "video/mp4"  # Możesz dopasować do rzeczywistego typu
+    else:
+        media_type = "image/png"  # Możesz dopasować do rzeczywistego typu
+
+    # Zwróć plik z proper headers
+    return FileResponse(
+        path=str(file_path),
+        media_type=media_type,
+        filename=clip.filename,  # Original filename dla użytkownika
+        headers={
+            "Content-Disposition": f'attachment; filename="{clip.filename}"',
+            "Accept-Ranges": "bytes"  # Informuje że wspieramy range requests
+        }
+    )
+
+
+@router.get("/thumbnails/{clip_id}")
+async def get_thumbnail(
+        clip_id: int,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user)
+):
+    """
+    Pobierz miniaturę klipa
+
+    GET /api/files/thumbnails/{clip_id}
+    """
+    clip = db.query(Clip).filter(
+        Clip.id == clip_id,
+        Clip.is_deleted == False
+    ).first()
+
+    if not clip:
+        raise NotFoundError(resource="Klip", resource_id=clip_id)
+
+    if not clip.thumbnail_path:
+        raise NotFoundError(resource="Thumbnail dla klipa", resource_id=clip_id)
+
+    thumbnail_path = Path(clip.thumbnail_path)
+
+    if not thumbnail_path.exists():
+        logger.error(f"Thumbnail not found: {thumbnail_path}")
+        raise StorageError(
+            message="Thumbnail nie został znaleziony",
+            path=str(thumbnail_path)
+        )
+
+    return FileResponse(
+        path=str(thumbnail_path),
+        media_type="image/jpeg",
+        headers={
+            "Cache-Control": "public, max-age=3600"  # Cache na 1h
+        }
     )
 
 
