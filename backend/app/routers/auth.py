@@ -15,6 +15,7 @@ from app.schemas.token import Token
 from app.schemas.user import UserCreate
 from app.schemas.user import UserResponse, UserWithToken
 from fastapi import APIRouter, Depends
+from fastapi import status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
