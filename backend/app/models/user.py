@@ -3,6 +3,7 @@ SQLAlchemy model dla User
 """
 from app.core.database import Base
 from sqlalchemy import Column, Integer, String, Boolean, JSON
+from sqlalchemy.orm import relationship
 
 
 class User(Base):
@@ -18,12 +19,12 @@ class User(Base):
     full_name = Column(String(100), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
 
-    # Scope-based permissions - lista nagród które użytkownik może przyznawać
-    # Przechowywane jako JSON array, np: ["award:epic_clip", "award:funny", "award:clutch"]
+    # Scope-based permissions
     award_scopes = Column(JSON, default=list, nullable=False)
 
-    # Relacje (dodamy później gdy będą inne modele)
-    # awards = relationship("Award", back_populates="user")
+    # Relacje
+    clips = relationship("Clip", back_populates="uploader", cascade="all, delete-orphan")
+    awards_given = relationship("Award", back_populates="user", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<User(id={self.id}, username='{self.username}', email='{self.email}')>"
