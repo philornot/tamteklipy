@@ -9,13 +9,12 @@ from pathlib import Path
 from typing import Optional
 
 from app.core.config import settings
-from app.core.config import settings
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.core.exceptions import FileUploadError, ValidationError
 from app.models.clip import Clip, ClipType
 from app.models.user import User
-from app.schemas.clip import ClipResponse, ClipListResponse
+from app.schemas.clip import ClipResponse, ClipListResponse, ClipDetailResponse
 from app.services.thumbnail_service import generate_thumbnail, extract_video_metadata
 from fastapi import APIRouter, UploadFile, File, Depends
 from sqlalchemy import desc, asc
@@ -405,6 +404,57 @@ async def list_clips(
         page=page,
         limit=limit,
         pages=pages
+    )
+
+
+@router.get("/clips/{clip_id}", response_model=ClipDetailResponse)
+async def get_clip(
+        clip_id: int,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user)
+):
+    """
+    Pobierz szczegóły pojedynczego klipa z nagrodami
+
+    GET /api/files/clips/{clip_id}
+    """
+    clip = db.query(Clip).filter(
+        Clip.id == clip_id,
+        Clip.is_deleted == False
+    ).first()
+
+    if not clip:
+        raise NotFoundError(resource="Klip", resource_id=clip_id)
+
+    # Przygotuj informacje o nagrodach
+    awards_info = [
+        {
+            "id": award.id,
+            "award_name": award.award_name,
+            "user_id": award.user_id,
+            "username": award.user.username,
+            "awarded_at": award.awarded_at.isoformat()
+        }
+        for award in clip.awards
+    ]
+
+    return ClipDetailResponse(
+        id=clip.id,
+        filename=clip.filename,
+        clip_type=clip.clip_type.value,
+        file_size=clip.file_size,
+        file_size_mb=clip.file_size_mb,
+        duration=clip.duration,
+        width=clip.width,
+        height=clip.height,
+        created_at=clip.created_at,
+        uploader_username=clip.uploader.username,
+        uploader_id=clip.uploader_id,
+        award_count=clip.award_count,
+        has_thumbnail=clip.thumbnail_path is not None,
+        awards=awards_info,
+        thumbnail_url=f"/api/files/thumbnails/{clip.id}" if clip.thumbnail_path else None,
+        download_url=f"/api/files/download/{clip.id}"
     )
 
 
