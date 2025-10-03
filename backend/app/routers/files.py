@@ -1,6 +1,7 @@
 """
 Router dla zarządzania plikami — upload, download, listowanie klipów i screenshotów
 """
+import hashlib
 import logging
 import shutil
 import uuid
@@ -304,3 +305,33 @@ def check_disk_space(storage_path: Path, required_bytes: int) -> bool:
         logger.error(f"Failed to check disk space: {e}")
         # Nie przerywamy uploadu, jeśli nie możemy sprawdzić miejsca
         return True
+
+
+def calculate_file_hash(file_content: bytes) -> str:
+    """
+    Oblicza SHA256 hash pliku
+
+    Args:
+        file_content: Zawartość pliku w bajtach
+
+    Returns:
+        str: SHA256 hash jako hex string
+    """
+    return hashlib.sha256(file_content).hexdigest()
+
+
+def check_duplicate(db: Session, file_hash: str, user_id: int) -> Optional[Clip]:
+    """
+    Sprawdza czy użytkownik już uploadował ten sam plik
+
+    Args:
+        db: Sesja bazy danych
+        file_hash: SHA256 hash pliku
+        user_id: ID użytkownika
+
+    Returns:
+        Clip: Istniejący klip jeśli duplikat, None jeśli nie
+    """
+    # Dodaj pole file_hash do modelu Clip (wymaga migracji)
+    # Na razie zwracamy None
+    return None
