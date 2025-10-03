@@ -307,6 +307,7 @@ def check_disk_space(storage_path: Path, required_bytes: int) -> bool:
         return True
 
 
+# todo: sugestie co do hashowania: dodaj pole `file_hash` do modelu `Clip`, utwórz migrację Alembic, indeksuj `file_hash` w bazie
 def calculate_file_hash(file_content: bytes) -> str:
     """
     Oblicza SHA256 hash pliku
