@@ -3,6 +3,7 @@ Router dla autoryzacji — logowanie, rejestracja, tokeny JWT
 """
 from app.core.database import get_db
 from app.core.exceptions import AuthenticationError, NotFoundError
+from app.core.security import hash_password
 from app.core.security import (
     verify_password,
     create_access_token,
@@ -10,6 +11,7 @@ from app.core.security import (
 )
 from app.models.user import User
 from app.schemas.token import Token
+from app.schemas.user import UserCreate
 from app.schemas.user import UserResponse, UserWithToken
 from fastapi import APIRouter, Depends
 from fastapi.security import OAuth2PasswordRequestForm
@@ -91,3 +93,66 @@ async def get_current_user(
         raise NotFoundError(resource="Użytkownik", resource_id=user_id)
 
     return user
+
+
+@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+async def register(
+        user_data: UserCreate,
+        db: Session = Depends(get_db)
+):
+    """
+    Endpoint rejestracji nowego użytkownika
+    UWAGA: Ten endpoint powinien być chroniony (tylko admin) - TODO: dodać middleware
+
+    POST /api/auth/register
+    Body:
+        - username: str
+        - email: str
+        - password: str
+        - full_name: str (optional)
+        - award_scopes: List[str] (optional)
+
+    Returns:
+        UserResponse: Dane utworzonego użytkownika
+    """
+    from app.core.exceptions import DuplicateError
+
+    # Sprawdź czy username już istnieje
+    existing_user = db.query(User).filter(
+        User.username == user_data.username.lower()
+    ).first()
+
+    if existing_user:
+        raise DuplicateError(
+            resource="Użytkownik",
+            field="username",
+            value=user_data.username
+        )
+
+    # Sprawdź czy email już istnieje
+    existing_email = db.query(User).filter(
+        User.email == user_data.email
+    ).first()
+
+    if existing_email:
+        raise DuplicateError(
+            resource="Użytkownik",
+            field="email",
+            value=user_data.email
+        )
+
+    # Utwórz nowego użytkownika
+    new_user = User(
+        username=user_data.username.lower(),
+        email=user_data.email,
+        hashed_password=hash_password(user_data.password),
+        full_name=user_data.full_name,
+        is_active=user_data.is_active,
+        award_scopes=user_data.award_scopes or []
+    )
+
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+
+    return new_user
