@@ -17,6 +17,7 @@ from app.core.dependencies import get_current_user
 from app.core.exceptions import FileUploadError, ValidationError, NotFoundError, AuthorizationError, StorageError, \
     DatabaseError
 from app.models.clip import Clip, ClipType
+from app.models.award import Award
 from app.models.user import User
 from app.schemas.clip import ClipResponse, ClipListResponse, ClipDetailResponse
 from app.services.thumbnail_service import generate_thumbnail, extract_video_metadata
@@ -424,7 +425,12 @@ async def get_clip(
 
     GET /api/files/clips/{clip_id}
     """
-    clip = db.query(Clip).filter(
+    from sqlalchemy.orm import joinedload
+
+    clip = db.query(Clip).options(
+        joinedload(Clip.uploader),
+        joinedload(Clip.awards).joinedload(Award.user)
+    ).filter(
         Clip.id == clip_id,
         Clip.is_deleted == False
     ).first()
