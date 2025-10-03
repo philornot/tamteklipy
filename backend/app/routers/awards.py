@@ -426,7 +426,7 @@ async def get_award_stats(
     from sqlalchemy import func
 
     # Całkowita liczba nagród
-    total_awards = db.query(func.count(Award.id)).scalar()
+    total_awards = db.query(func.count(Award.id)).scalar() or 0
 
     # Najpopularniejszy typ nagrody
     most_popular = db.query(
@@ -438,7 +438,7 @@ async def get_award_stats(
         func.count(Award.id).desc()
     ).first()
 
-    # Najbardziej aktywni użytkownicy
+    # Najbardziej aktywni użytkownicy (top 5)
     most_active_users = db.query(
         User.id,
         User.username,
@@ -451,12 +451,42 @@ async def get_award_stats(
         func.count(Award.id).desc()
     ).limit(5).all()
 
+    # Top klipy według nagród (top 10)
+    top_clips = db.query(
+        Clip.id,
+        Clip.filename,
+        Clip.clip_type,
+        User.username.label('uploader_username'),
+        func.count(Award.id).label('award_count')
+    ).join(
+        Award, Clip.id == Award.clip_id
+    ).join(
+        User, Clip.uploader_id == User.id
+    ).filter(
+        Clip.is_deleted == False
+    ).group_by(
+        Clip.id
+    ).order_by(
+        func.count(Award.id).desc()
+    ).limit(10).all()
+
+    # Breakdown nagród per użytkownik (dla zalogowanego)
+    user_awards_breakdown = db.query(
+        Award.award_name,
+        func.count(Award.id).label('count')
+    ).filter(
+        Award.user_id == current_user.id
+    ).group_by(
+        Award.award_name
+    ).all()
+
     return {
         "total_awards": total_awards,
         "most_popular_award": {
             "award_name": most_popular[0] if most_popular else None,
             "count": most_popular[1] if most_popular else 0,
-            "display_name": AWARD_DEFINITIONS.get(most_popular[0], {}).get("display_name") if most_popular else None
+            "display_name": AWARD_DEFINITIONS.get(most_popular[0], {}).get("display_name") if most_popular else None,
+            "icon": AWARD_DEFINITIONS.get(most_popular[0], {}).get("icon") if most_popular else None
         },
         "most_active_users": [
             {
@@ -465,5 +495,19 @@ async def get_award_stats(
                 "awards_given": user.awards_given
             }
             for user in most_active_users
-        ]
+        ],
+        "top_clips_by_awards": [
+            {
+                "clip_id": clip.id,
+                "filename": clip.filename,
+                "clip_type": clip.clip_type.value,
+                "uploader_username": clip.uploader_username,
+                "award_count": clip.award_count
+            }
+            for clip in top_clips
+        ],
+        "current_user_breakdown": {
+            award.award_name: award.count
+            for award in user_awards_breakdown
+        }
     }
