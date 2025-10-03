@@ -481,6 +481,12 @@ async def download_clip(
     if not clip:
         raise NotFoundError(resource="Klip", resource_id=clip_id)
 
+    # Sprawdź uprawnienia
+    if not can_access_clip(clip, current_user):
+        raise AuthorizationError(
+            message="Nie masz uprawnień do pobrania tego pliku"
+        )
+
     # Sprawdź czy plik istnieje
     file_path = Path(clip.file_path)
 
@@ -717,3 +723,24 @@ def check_duplicate(db: Session, file_hash: str, user_id: int) -> Optional[Clip]
     # Dodaj pole file_hash do modelu Clip (wymaga migracji)
     # Na razie zwracamy None
     return None
+
+
+def can_access_clip(clip: Clip, user: User) -> bool:
+    """
+    Sprawdza czy użytkownik ma dostęp do klipa
+
+    Args:
+        clip: Klip do sprawdzenia
+        user: Użytkownik
+
+    Returns:
+        bool: True jeśli ma dostęp
+    """
+    # Zasady dostępu:
+    # 1. Właściciel zawsze ma dostęp
+    if clip.uploader_id == user.id:
+        return True
+
+    # 2. Wszyscy zalogowani mają dostęp
+    # W przyszłości można dodać np. prywatne klipy
+    return True
