@@ -2,7 +2,7 @@
 Pydantic schemas dla Award
 """
 from datetime import datetime
-from typing import List
+from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -44,6 +44,7 @@ class UserAwardScope(BaseModel):
     display_name: str
     description: str
     icon: str = "🏆"
+    icon_url: Optional[str] = None
 
 
 class MyAwardsResponse(BaseModel):

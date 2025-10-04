@@ -143,26 +143,48 @@ async def get_user_awards(
 
 
 @router.get("/my-awards", response_model=MyAwardsResponse)
-async def get_my_awards(current_user: User = Depends(get_current_user)):
+async def get_my_awards(
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user)
+):
     """
     Pobierz nagrody które aktualny użytkownik może przyznawać
-
-    GET /api/awards/my-awards
-    Wymaga: Authorization header
     """
     available_awards = []
 
+    # Pobierz wszystkie AwardTypes dla scope usera
+    award_types = db.query(AwardType).filter(
+        AwardType.name.in_(current_user.award_scopes or [])
+    ).all()
+
+    award_types_map = {at.name: at for at in award_types}
+
     for scope in current_user.award_scopes or []:
-        if scope in AWARD_DEFINITIONS:
-            definition = AWARD_DEFINITIONS[scope]
+        award_type = award_types_map.get(scope)
+
+        if award_type:
             available_awards.append(
                 UserAwardScope(
-                    award_name=scope,
-                    display_name=definition["display_name"],
-                    description=definition["description"],
-                    icon=definition["icon"]
+                    award_name=award_type.name,
+                    display_name=award_type.display_name,
+                    description=award_type.description,
+                    icon=award_type.icon,
+                    icon_url=f"/api/admin/award-types/{award_type.id}/icon" if award_type.icon_path else None
                 )
             )
+        else:
+            # Fallback dla starych scope bez AwardType
+            if scope in AWARD_DEFINITIONS:
+                definition = AWARD_DEFINITIONS[scope]
+                available_awards.append(
+                    UserAwardScope(
+                        award_name=scope,
+                        display_name=definition["display_name"],
+                        description=definition["description"],
+                        icon=definition["icon"],
+                        icon_url=None
+                    )
+                )
 
     return MyAwardsResponse(available_awards=available_awards)
 
