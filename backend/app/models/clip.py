@@ -3,9 +3,9 @@ SQLAlchemy model dla Clip (klipy i screenshoty)
 """
 import enum
 from datetime import datetime
-from pathlib import Path
 
 from app.core.database import Base
+from app.core.path_utils import validate_absolute_path
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Enum as SQLEnum
 from sqlalchemy import event
 from sqlalchemy.orm import relationship
@@ -68,31 +68,10 @@ class Clip(Base):
 
     @validates('file_path', 'thumbnail_path')
     def validate_path_is_absolute(self, key, value):
-        """
-        Waliduje, że ścieżki są absolutne przy zapisie do bazy
-
-        Args:
-            key: Nazwa pola (file_path lub thumbnail_path)
-            value: Wartość ścieżki
-
-        Returns:
-            str: Zwalidowana ścieżka
-
-        Raises:
-            ValueError: Jeśli ścieżka nie jest absolutna
-        """
+        """Waliduje, że ścieżki są absolutne"""
         if value is None:
             return value
-
-        path = Path(value)
-
-        if not path.is_absolute():
-            raise ValueError(
-                f"{key} musi być ścieżką absolutną. "
-                f"Otrzymano: {value}"
-            )
-
-        return value
+        return validate_absolute_path(value, field_name=key)
 
 
 @event.listens_for(Clip, 'before_insert')
