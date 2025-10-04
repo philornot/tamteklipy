@@ -1,17 +1,18 @@
-import {useState} from 'react'
-import {Award, BarChart3, Users} from 'lucide-react'
-import {useAuth} from '../hooks/useAuth'
-import {Navigate} from 'react-router-dom'
-import StatsPanel from "../components/admin/StatsPanel.jsx";
-import UsersManager from "../components/admin/UsersManager.jsx";
+import { useState } from 'react'
+import { Award, BarChart3, Users } from 'lucide-react'
+import { useAuth } from '../hooks/useAuth'
+import { Navigate } from 'react-router-dom'
+import StatsPanel from "../components/admin/StatsPanel.jsx"
+import UsersManager from "../components/admin/UsersManager.jsx"
+import AwardTypesManager from "../components/admin/AwardTypesManager.jsx"
 
 function AdminPage() {
-    const {user} = useAuth()
+    const { user } = useAuth()
     const [activeTab, setActiveTab] = useState('users')
 
     // Check admin permission
     if (!user?.award_scopes?.includes('admin')) {
-        return <Navigate to="/dashboard" replace/>
+        return <Navigate to="/dashboard" replace />
     }
 
     return (
@@ -26,7 +27,7 @@ function AdminPage() {
                         activeTab === 'users' ? 'border-b-2 border-blue-500 text-white' : 'text-gray-400'
                     }`}
                 >
-                    <Users size={20}/>
+                    <Users size={20} />
                     Users
                 </button>
                 <button
@@ -35,7 +36,7 @@ function AdminPage() {
                         activeTab === 'award-types' ? 'border-b-2 border-blue-500 text-white' : 'text-gray-400'
                     }`}
                 >
-                    <Award size={20}/>
+                    <Award size={20} />
                     Award Types
                 </button>
                 <button
@@ -44,18 +45,16 @@ function AdminPage() {
                         activeTab === 'stats' ? 'border-b-2 border-blue-500 text-white' : 'text-gray-400'
                     }`}
                 >
-                    <BarChart3 size={20}/>
+                    <BarChart3 size={20} />
                     Stats
                 </button>
             </div>
 
             {/* Content */}
             <div>
-                {activeTab === 'users' && <p className="text-gray-400">User management - TODO</p>}
-                {activeTab === 'award-types' && <p className="text-gray-400">Award types management - TODO</p>}
-                {activeTab === 'stats' && <p className="text-gray-400">Statistics - TODO</p>}
-                {activeTab === 'users' && <UsersManager/>}
-                {activeTab === 'stats' && <StatsPanel/>}
+                {activeTab === 'users' && <UsersManager />}
+                {activeTab === 'award-types' && <AwardTypesManager />}
+                {activeTab === 'stats' && <StatsPanel />}
             </div>
         </div>
     )

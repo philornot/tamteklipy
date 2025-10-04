@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Edit2, Loader, Plus, Trash2 } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Plus, Edit2, Trash2, Loader } from "lucide-react";
 import api from "../../services/api";
 import toast from "react-hot-toast";
 
@@ -23,7 +23,11 @@ function AwardTypesManager() {
   };
 
   if (loading) {
-    return <Loader className="animate-spin mx-auto" size={32} />;
+    return (
+      <div className="flex justify-center py-8">
+        <Loader className="animate-spin" size={32} />
+      </div>
+    );
   }
 
   return (
@@ -32,9 +36,9 @@ function AwardTypesManager() {
         <h2 className="text-xl font-semibold">
           Typy Nagród ({awardTypes.length})
         </h2>
-        <button className="btn-primary flex items-center gap-2">
+        <button className="btn-primary flex items-center gap-2" disabled>
           <Plus size={20} />
-          Dodaj typ
+          Dodaj typ (TODO)
         </button>
       </div>
 
@@ -70,14 +74,19 @@ function AwardTypesManager() {
               </div>
             </div>
 
-            {/* Actions */}
+            {/* Actions - TODO: implement edit/delete modals */}
             <div className="flex gap-2">
-              <button className="p-2 hover:bg-gray-700 rounded" title="Edytuj">
+              <button
+                className="p-2 hover:bg-gray-700 rounded opacity-50 cursor-not-allowed"
+                title="Edytuj (TODO)"
+                disabled
+              >
                 <Edit2 size={16} />
               </button>
               <button
-                className="p-2 hover:bg-gray-700 rounded text-red-400"
-                title="Usuń"
+                className="p-2 hover:bg-gray-700 rounded text-red-400 opacity-50 cursor-not-allowed"
+                title="Usuń (TODO)"
+                disabled
               >
                 <Trash2 size={16} />
               </button>
