@@ -100,3 +100,35 @@ async def upload_award_icon(
         "message": "Ikona uploaded",
         "icon_url": f"/api/admin/award-types/{award_type_id}/icon"
     }
+
+
+@router.get("/award-types/{award_type_id}/icon")
+async def get_award_icon(
+        award_type_id: int,
+        db: Session = Depends(get_db)
+):
+    """
+    Pobierz ikonę typu nagrody
+    GET /api/admin/award-types/{award_type_id}/icon
+    """
+    award_type = db.query(AwardType).filter(AwardType.id == award_type_id).first()
+
+    if not award_type or not award_type.icon_path:
+        raise NotFoundError(resource="Icon", resource_id=award_type_id)
+
+    icon_path = Path(award_type.icon_path)
+
+    if not icon_path.exists():
+        logger.error(f"Icon file not found: {icon_path}")
+        raise NotFoundError(resource="Icon file", resource_id=award_type_id)
+
+    # Określ MIME type
+    media_type = "image/png" if icon_path.suffix == ".png" else "image/jpeg"
+
+    return FileResponse(
+        path=str(icon_path),
+        media_type=media_type,
+        headers={
+            "Cache-Control": "public, max-age=86400"  # 24h cache
+        }
+    )
