@@ -3,12 +3,11 @@ SQLAlchemy model dla Clip (klipy i screenshoty)
 """
 import enum
 from datetime import datetime
+from pathlib import Path
 
 from app.core.database import Base
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Enum as SQLEnum
-from sqlalchemy import event
-from sqlalchemy.orm import relationship
-from sqlalchemy.orm import validates
+from sqlalchemy.orm import relationship, validates
 
 
 class ClipType(str, enum.Enum):
@@ -67,7 +66,19 @@ class Clip(Base):
 
     @validates('file_path', 'thumbnail_path')
     def validate_path_is_absolute(self, key, value):
-        """Waliduje że ścieżki są absolutne"""
+        """
+        Waliduje, że ścieżki są absolutne przy zapisie do bazy
+
+        Args:
+            key: Nazwa pola (file_path lub thumbnail_path)
+            value: Wartość ścieżki
+
+        Returns:
+            str: Zwalidowana ścieżka
+
+        Raises:
+            ValueError: Jeśli ścieżka nie jest absolutna
+        """
         if value is None:
             return value
 
@@ -75,44 +86,12 @@ class Clip(Base):
 
         if not path.is_absolute():
             logger.warning(
-                f"Próba zapisu względnej ścieżki do {key}: {value}. "
-                f"Ścieżki muszą być absolutne!"
+                f"Attempted to save relative path to {key}: '{value}'. "
+                f"Paths must be absolute!"
             )
             raise ValueError(
-                f"{key} musi być ścieżką absolutną. Otrzymano: {value}"
+                f"{key} must be an absolute path. Received: {value}"
             )
 
+        logger.debug(f"Path validation OK for {key}: {value}")
         return value
-
-
-@event.listens_for(Clip, 'before_insert')
-@event.listens_for(Clip, 'before_update')
-def validate_clip_paths(mapper, connection, target):
-    """
-    Event listener - waliduje ścieżki przed zapisem do bazy
-
-    Args:
-        mapper: SQLAlchemy mapper
-        connection: Database connection
-        target: Instance of Clip being saved
-
-    Raises:
-        ValueError: Jeśli ścieżki nie są absolutne
-    """
-    from pathlib import Path
-
-    # Waliduj file_path
-    if target.file_path:
-        if not Path(target.file_path).is_absolute():
-            raise ValueError(
-                f"file_path musi być absolutną ścieżką. "
-                f"Otrzymano: {target.file_path}"
-            )
-
-    # Waliduj thumbnail_path (jeśli nie None)
-    if target.thumbnail_path:
-        if not Path(target.thumbnail_path).is_absolute():
-            raise ValueError(
-                f"thumbnail_path musi być absolutną ścieżką. "
-                f"Otrzymano: {target.thumbnail_path}"
-            )
