@@ -39,17 +39,34 @@ def hard_reset():
     logger.info("Rozpoczynam hard reset...")
 
     try:
-        # 1. Usuń wszystkie tabele
-        logger.info("1. Usuwam wszystkie tabele...")
-        Base.metadata.drop_all(bind=engine)
-        logger.info("   ✓ Tabele usunięte")
-
-        # 2. Usuń plik bazy danych
+        # 1. Usuń plik bazy danych (nawet jeśli uszkodzony)
         db_file = Path("tamteklipy.db")
         if db_file.exists():
-            logger.info("2. Usuwam plik bazy danych...")
-            db_file.unlink()
-            logger.info("   ✓ Plik bazy danych usunięty")
+            logger.info("1. Usuwam plik bazy danych...")
+            try:
+                db_file.unlink()
+                logger.info("   ✓ Plik bazy danych usunięty")
+            except Exception as e:
+                logger.warning(f"   Błąd przy usuwaniu: {e}")
+                logger.info("   Próbuję wymusić usunięcie...")
+                import os
+                try:
+                    os.remove(str(db_file))
+                    logger.info("   ✓ Plik usunięty wymuszone")
+                except Exception as e2:
+                    logger.error(f"   ❌ Nie można usunąć pliku: {e2}")
+                    logger.error("   Usuń plik ręcznie: del tamteklipy.db")
+                    return
+        else:
+            logger.info("1. Plik bazy nie istnieje (OK)")
+
+        # 2. Usuń wszystkie tabele (jeśli baza działała)
+        try:
+            logger.info("2. Czyszczę metadane...")
+            Base.metadata.drop_all(bind=engine)
+            logger.info("   ✓ Metadane wyczyszczone")
+        except Exception as e:
+            logger.warning(f"   Pominięto (baza była uszkodzona): {e}")
 
         # 3. Utwórz bazę od nowa
         logger.info("3. Tworzę nową bazę danych...")

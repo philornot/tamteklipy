@@ -12,22 +12,26 @@ python hard_reset.py && python seed_database.py --clear && python db_status.py
 ## 📋 Podstawowe Komendy
 
 ### Hard Reset (Usuwa wszystko!)
+
 ```bash
 python hard_reset.py
 # Wpisz: TAK
 ```
 
 ### Seed z danymi testowymi
+
 ```bash
 python seed_database.py --clear
 ```
 
 ### Sprawdź status bazy
+
 ```bash
 python db_status.py
 ```
 
 ### Test uprawnień
+
 ```bash
 # Podsumowanie wszystkich
 python test_permissions.py --all
@@ -44,23 +48,27 @@ python test_permissions.py --award award:personal_admin
 ## 💾 Backup & Restore
 
 ### Utwórz backup
+
 ```bash
 python backup_restore.py backup
 ```
 
 ### Lista backupów
+
 ```bash
 python backup_restore.py list
 python backup_restore.py list --limit 5
 ```
 
 ### Restore z backupu
+
 ```bash
 python backup_restore.py restore backups/tamteklipy_20250104_123456.db
 # Wpisz: TAK
 ```
 
 ### Wyczyść stare backupy (zostaw 10 najnowszych)
+
 ```bash
 python backup_restore.py cleanup --keep 10
 ```
@@ -68,16 +76,19 @@ python backup_restore.py cleanup --keep 10
 ## 🔧 Migracje (jeśli używasz Alembic)
 
 ### Sprawdź status migracji
+
 ```bash
 python run_migration.py --check
 ```
 
 ### Uruchom migrację
+
 ```bash
 python run_migration.py
 ```
 
 ### Cofnij migrację
+
 ```bash
 python run_migration.py --down
 ```
@@ -85,16 +96,19 @@ python run_migration.py --down
 ## 🚀 Uruchomienie Serwera
 
 ### Development mode
+
 ```bash
 uvicorn app.main:app --reload
 ```
 
 ### Określ host i port
+
 ```bash
 uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 ### Production mode (bez reload)
+
 ```bash
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
@@ -102,6 +116,7 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 ## 🔍 Debugging & Diagnostyka
 
 ### Python REPL - quick check
+
 ```bash
 python -c "
 from app.core.database import SessionLocal
@@ -115,6 +130,7 @@ print(f'Admins: {db.query(User).filter(User.is_admin==True).count()}')
 ```
 
 ### Sprawdź konkretnego usera
+
 ```bash
 python -c "
 from app.core.database import SessionLocal
@@ -130,6 +146,7 @@ print(f'Active: {user.is_active}')
 ```
 
 ### Sprawdź nagrody
+
 ```bash
 python -c "
 from app.core.database import SessionLocal
@@ -145,6 +162,7 @@ for a in awards:
 ## 🎯 Typowe Scenariusze
 
 ### Scenariusz 1: Pierwszy setup projektu
+
 ```bash
 cd backend
 python hard_reset.py                    # TAK
@@ -154,6 +172,7 @@ uvicorn app.main:app --reload
 ```
 
 ### Scenariusz 2: Zmiana struktury bazy (development)
+
 ```bash
 python backup_restore.py backup         # Safety first
 python hard_reset.py                    # TAK
@@ -162,6 +181,7 @@ python db_status.py
 ```
 
 ### Scenariusz 3: Coś się zepsuło, wracam do punktu wyjścia
+
 ```bash
 rm tamteklipy.db
 python hard_reset.py                    # TAK
@@ -169,6 +189,7 @@ python seed_database.py --clear
 ```
 
 ### Scenariusz 4: Testowanie uprawnień
+
 ```bash
 python test_permissions.py --all
 python test_permissions.py admin
@@ -177,6 +198,7 @@ python test_permissions.py --award award:personal_gamer1
 ```
 
 ### Scenariusz 5: Przed deploy (backup)
+
 ```bash
 python backup_restore.py backup
 python backup_restore.py list
@@ -184,6 +206,7 @@ python backup_restore.py list
 ```
 
 ### Scenariusz 6: Po deploy (restore jeśli coś poszło nie tak)
+
 ```bash
 python backup_restore.py list
 python backup_restore.py restore backups/tamteklipy_YYYYMMDD_HHMMSS.db
@@ -213,29 +236,61 @@ Po `hard_reset.py` + `seed_database.py --clear`:
 
 ## 🐛 Troubleshooting
 
-### Problem: `no such column: award_types.lucide_icon`
+### Problem: `file is not a database`
+
+**Najczęstszy błąd!** Plik bazy jest uszkodzony.
+
 **Rozwiązanie:**
+
+```bash
+# Usuń uszkodzony plik ręcznie
+del tamteklipy.db          # Windows
+rm tamteklipy.db           # Linux/Mac
+
+# Teraz hard reset
+python hard_reset.py
+python seed_database.py --clear
+```
+
+Lub w PowerShell (Windows):
+
+```powershell
+Remove-Item -Force tamteklipy.db
+python hard_reset.py
+python seed_database.py --clear
+```
+
+### Problem: `no such column: award_types.lucide_icon`
+
+**Rozwiązanie:**
+
 ```bash
 python hard_reset.py    # TAK
 python seed_database.py --clear
 ```
 
 ### Problem: `no such column: users.is_admin`
+
 **Rozwiązanie:**
+
 ```bash
 python hard_reset.py    # TAK
 python seed_database.py --clear
 ```
 
 ### Problem: Brakuje osobistych nagród
+
 **Rozwiązanie:**
+
 ```bash
 python seed_database.py --clear
 # Seed automatycznie utworzy brakujące
 ```
 
 ### Problem: Database is locked
+
 **Rozwiązanie:**
+
 ```bash
 # Zamknij wszystkie połączenia
 pkill -f uvicorn
@@ -246,7 +301,9 @@ python hard_reset.py
 ```
 
 ### Problem: Import errors
+
 **Rozwiązanie:**
+
 ```bash
 # Upewnij się że jesteś w katalogu backend/
 cd backend
@@ -258,27 +315,32 @@ python -c "from app.models import User, AwardType, Clip, Award"
 ## 🎓 Dobre Praktyki
 
 ### ✅ Zawsze rób backup przed zmianami
+
 ```bash
 python backup_restore.py backup
 ```
 
 ### ✅ Sprawdzaj status po każdej zmianie
+
 ```bash
 python db_status.py
 ```
 
 ### ✅ Testuj uprawnienia po dodaniu nowych nagród
+
 ```bash
 python test_permissions.py --all
 ```
 
 ### ✅ W development używaj --clear
+
 ```bash
 python seed_database.py --clear
 # Gwarantuje czysty stan
 ```
 
 ### ✅ Dokumentuj własne custom nagrody
+
 ```bash
 # Dodaj do dokumentacji jakie custom nagrody utworzyłeś
 # i kto może je przyznawać
@@ -319,6 +381,7 @@ Po uruchomieniu serwera:
 - **Root**: http://localhost:8000/
 
 ### Quick API Test
+
 ```bash
 # Health check
 curl http://localhost:8000/health
@@ -387,6 +450,7 @@ alias tk-run="uvicorn app.main:app --reload"
 ```
 
 Wtedy możesz używać:
+
 ```bash
 tk-reset    # Full reset
 tk-status   # Check status
