@@ -66,6 +66,16 @@ function Header({ user, onLogout }) {
                 </Link>
               )}
 
+              {/* Panel zakładka dla admina */}
+              {user?.award_scopes?.includes("admin") && (
+                <Link
+                  to="/admin"
+                  className="flex items-center gap-2 text-blue-400 hover:text-white font-semibold transition border border-blue-400 rounded px-2 py-1"
+                >
+                  <span>Panel</span>
+                </Link>
+              )}
+
               {/* User info */}
               <div className="flex items-center gap-4 ml-4 pl-4 border-l border-gray-700">
                 <span className="text-gray-400">{user.username}</span>
