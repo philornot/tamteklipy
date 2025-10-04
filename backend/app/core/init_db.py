@@ -1,5 +1,5 @@
 """
-Inicjalizacja bazy danych - tworzenie tabel
+Inicjalizacja bazy danych — tworzenie tabel
 """
 import logging
 
@@ -25,7 +25,7 @@ def init_db():
     logger.info("Tabele utworzone pomyślnie!")
 
     # Seeduj podstawowe AwardTypes
-    seed_award_types()
+    seed_system_awards()
 
     # Wyświetl informacje o bazie
     db_info = get_database_info()
@@ -35,63 +35,125 @@ def init_db():
     return True
 
 
-def seed_award_types():
-    """Seeduje podstawowe typy nagród jeśli nie istnieją"""
+def seed_system_awards():
+    """Seeduje systemowe typy nagród jeśli nie istnieją"""
     db = SessionLocal()
     try:
-        existing_count = db.query(AwardType).count()
+        existing_count = db.query(AwardType).filter(AwardType.is_system_award == True).count()
         if existing_count > 0:
-            logger.info(f"AwardTypes już istnieją ({existing_count}), pomijam seedowanie")
+            logger.info(f"Systemowe AwardTypes już istnieją ({existing_count}), pomijam seedowanie")
             return
 
-        award_types = [
+        system_awards = [
             AwardType(
                 name="award:epic_clip",
                 display_name="Epic Clip",
                 description="Za epicki moment w grze",
-                icon="🔥",
-                color="#FF4500"
+                lucide_icon="flame",
+                color="#FF4500",
+                is_system_award=True,
+                is_personal=False
             ),
             AwardType(
                 name="award:funny",
                 display_name="Funny Moment",
                 description="Za zabawną sytuację",
-                icon="😂",
-                color="#FFD700"
+                lucide_icon="laugh",
+                color="#FFD700",
+                is_system_award=True,
+                is_personal=False
             ),
             AwardType(
                 name="award:pro_play",
                 display_name="Pro Play",
                 description="Za profesjonalną zagrywkę",
-                icon="⭐",
-                color="#4169E1"
+                lucide_icon="star",
+                color="#4169E1",
+                is_system_award=True,
+                is_personal=False
             ),
             AwardType(
                 name="award:clutch",
                 display_name="Clutch",
                 description="Za clutch w trudnej sytuacji",
-                icon="💪",
-                color="#32CD32"
+                lucide_icon="zap",
+                color="#32CD32",
+                is_system_award=True,
+                is_personal=False
             ),
             AwardType(
                 name="award:wtf",
                 display_name="WTF Moment",
                 description="Za totalnie nieoczekiwaną sytuację",
-                icon="🤯",
-                color="#9370DB"
+                lucide_icon="eye",
+                color="#9370DB",
+                is_system_award=True,
+                is_personal=False
             )
         ]
 
-        for award_type in award_types:
+        for award_type in system_awards:
             db.add(award_type)
-            logger.debug(f"Created AwardType: {award_type.name}")
+            logger.info(f"Created system AwardType: {award_type.name}")
 
         db.commit()
-        logger.debug(f"Seedowano {len(award_types)} typów nagród")
+        logger.info(f"Seedowano {len(system_awards)} systemowych typów nagród")
 
     except Exception as e:
         db.rollback()
         logger.error(f"Błąd podczas seedowania AwardTypes: {e}")
+    finally:
+        db.close()
+
+
+def create_personal_award_for_user(user_id: int, username: str, display_name: str = None) -> AwardType:
+    """
+    Tworzy osobistą nagrodę dla nowego użytkownika
+
+    Args:
+        user_id: ID użytkownika
+        username: Username użytkownika
+        display_name: Wyświetlana nazwa użytkownika
+
+    Returns:
+        AwardType: Utworzona nagroda
+    """
+    db = SessionLocal()
+    try:
+        # Sprawdź czy użytkownik już ma osobistą nagrodę
+        existing = db.query(AwardType).filter(
+            AwardType.created_by_user_id == user_id,
+            AwardType.is_personal == True
+        ).first()
+
+        if existing:
+            logger.info(f"User {username} already has personal award: {existing.name}")
+            return existing
+
+        # Utwórz osobistą nagrodę
+        personal_award = AwardType(
+            name=f"award:personal_{username}",
+            display_name=f"Nagroda {display_name or username}",
+            description=f"Osobista nagroda użytkownika {display_name or username}",
+            lucide_icon="award",  # Default icon
+            color="#FF6B9D",  # Pink color for personal awards
+            created_by_user_id=user_id,
+            is_system_award=False,
+            is_personal=True
+        )
+
+        db.add(personal_award)
+        db.commit()
+        db.refresh(personal_award)
+
+        logger.info(f"Created personal award for {username}: {personal_award.name}")
+
+        return personal_award
+
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Błąd podczas tworzenia osobistej nagrody: {e}")
+        raise
     finally:
         db.close()
 

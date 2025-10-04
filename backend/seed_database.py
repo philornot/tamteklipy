@@ -11,7 +11,9 @@ from app.core.database import SessionLocal
 from app.models.user import User
 from app.models.clip import Clip, ClipType
 from app.models.award import Award
+from app.models.award_type import AwardType
 from app.core.security import hash_password
+from app.core.init_db import create_personal_award_for_user
 import logging
 
 logging.basicConfig(level=logging.INFO)
@@ -23,13 +25,14 @@ def clear_database(db):
     logger.warning("Usuwanie wszystkich danych z bazy...")
     db.query(Award).delete()
     db.query(Clip).delete()
+    db.query(AwardType).delete()
     db.query(User).delete()
     db.commit()
     logger.info("Baza danych wyczyszczona")
 
 
 def seed_users(db):
-    """Tworzy testowych użytkowników"""
+    """Tworzy testowych użytkowników z osobistymi nagrodami"""
     logger.info("Tworzenie testowych użytkowników...")
 
     users_data = [
@@ -38,6 +41,7 @@ def seed_users(db):
             "email": "admin@tamteklipy.local",
             "password": "Admin123!",
             "full_name": "Administrator",
+            "is_admin": True,
             "award_scopes": ["award:epic_clip", "award:funny", "award:clutch", "award:wtf"]
         },
         {
@@ -45,6 +49,7 @@ def seed_users(db):
             "email": "gamer1@tamteklipy.local",
             "password": "Gamer123!",
             "full_name": "Pro Gamer",
+            "is_admin": False,
             "award_scopes": ["award:epic_clip", "award:clutch"]
         },
         {
@@ -52,6 +57,7 @@ def seed_users(db):
             "email": "gamer2@tamteklipy.local",
             "password": "Gamer123!",
             "full_name": "Casual Player",
+            "is_admin": False,
             "award_scopes": ["award:funny", "award:wtf"]
         },
         {
@@ -59,6 +65,7 @@ def seed_users(db):
             "email": "viewer@tamteklipy.local",
             "password": "Viewer123!",
             "full_name": "Just Watching",
+            "is_admin": False,
             "award_scopes": ["award:funny"]
         }
     ]
@@ -70,6 +77,13 @@ def seed_users(db):
         if existing:
             logger.info(f"  Użytkownik {user_data['username']} już istnieje, pomijam")
             created_users.append(existing)
+
+            # Upewnij się że ma osobistą nagrodę
+            create_personal_award_for_user(
+                existing.id,
+                existing.username,
+                existing.full_name or existing.username
+            )
             continue
 
         user = User(
@@ -78,17 +92,67 @@ def seed_users(db):
             hashed_password=hash_password(user_data["password"]),
             full_name=user_data["full_name"],
             is_active=True,
+            is_admin=user_data["is_admin"],
             award_scopes=user_data["award_scopes"]
         )
 
         db.add(user)
+        db.flush()  # Get user.id
+
+        # Utwórz osobistą nagrodę dla użytkownika
+        create_personal_award_for_user(
+            user.id,
+            user.username,
+            user.full_name or user.username
+        )
+
         created_users.append(user)
-        logger.info(f"  ✓ {user_data['username']} (scopes: {len(user_data['award_scopes'])})")
+        logger.info(f"  ✓ {user_data['username']} (admin: {user_data['is_admin']}, personal award created)")
 
     db.commit()
-    logger.info(f"Utworzono {len(created_users)} użytkowników\n")
+    logger.info(f"Utworzono {len(created_users)} użytkowników z osobistymi nagrodami\n")
 
     return created_users
+
+
+def seed_custom_awards(db, users):
+    """Tworzy dodatkowe custom nagrody dla niektórych użytkowników"""
+    logger.info("Tworzenie dodatkowych custom nagród...")
+
+    # gamer1 tworzy swoją custom nagrodę
+    gamer1 = next((u for u in users if u.username == "gamer1"), None)
+    if gamer1:
+        custom_award = AwardType(
+            name=f"award:custom_gamer1_mvp",
+            display_name="MVP of the Match",
+            description="Za bycie najlepszym graczem w meczu",
+            lucide_icon="crown",
+            color="#FFD700",
+            created_by_user_id=gamer1.id,
+            is_system_award=False,
+            is_personal=False  # Może ją przyznawać każdy
+        )
+        db.add(custom_award)
+        logger.info(f"  ✓ Created custom award by gamer1: {custom_award.display_name}")
+
+    # gamer2 tworzy swoją custom nagrodę z custom ikoną
+    gamer2 = next((u for u in users if u.username == "gamer2"), None)
+    if gamer2:
+        custom_award = AwardType(
+            name=f"award:custom_gamer2_lucky",
+            display_name="Lucky Shot",
+            description="Za szczęśliwy strzał",
+            custom_icon_path="/uploads/award_icons/lucky_shot.png",  # Custom icon
+            color="#4CAF50",
+            created_by_user_id=gamer2.id,
+            is_system_award=False,
+            is_personal=False
+        )
+        db.add(custom_award)
+        logger.info(f"  ✓ Created custom award by gamer2: {custom_award.display_name} (custom icon)")
+
+    db.commit()
+    logger.info("Dodatkowe custom nagrody utworzone\n")
 
 
 def seed_clips(db, users):
@@ -166,6 +230,9 @@ def seed_awards(db, users, clips):
 
     awards_count = 0
 
+    # Pobierz wszystkie dostępne nagrody
+    all_awards = db.query(AwardType).all()
+
     # Każdy użytkownik przyzna losowe nagrody do klipów
     for user in users:
         for clip in clips:
@@ -173,22 +240,29 @@ def seed_awards(db, users, clips):
             if clip.uploader_id == user.id:
                 continue
 
-            # Losowo przyzna nagrodę (50% szans)
             import random
-            if random.random() > 0.5:
+
+            # 60% szans na przyznanie nagrody
+            if random.random() > 0.6:
                 continue
 
-            # Wybierz losową nagrodę którą użytkownik ma
-            if not user.award_scopes:
+            # Wybierz dostępne nagrody dla użytkownika
+            available_awards = [
+                award for award in all_awards
+                if user.can_give_award(award)
+            ]
+
+            if not available_awards:
                 continue
 
-            award_name = random.choice(user.award_scopes)
+            # Wybierz losową nagrodę
+            award_type = random.choice(available_awards)
 
             # Sprawdź czy już nie przyznał takiej nagrody
             existing = db.query(Award).filter(
                 Award.clip_id == clip.id,
                 Award.user_id == user.id,
-                Award.award_name == award_name
+                Award.award_name == award_type.name
             ).first()
 
             if existing:
@@ -197,7 +271,7 @@ def seed_awards(db, users, clips):
             award = Award(
                 clip_id=clip.id,
                 user_id=user.id,
-                award_name=award_name
+                award_name=award_type.name
             )
 
             db.add(award)
@@ -209,26 +283,55 @@ def seed_awards(db, users, clips):
 
 def print_summary(db):
     """Wyświetla podsumowanie seedowania"""
-    logger.info("=" * 50)
+    logger.info("=" * 60)
     logger.info("PODSUMOWANIE BAZY DANYCH")
-    logger.info("=" * 50)
+    logger.info("=" * 60)
 
     users_count = db.query(User).count()
     clips_count = db.query(Clip).count()
     awards_count = db.query(Award).count()
+    award_types_count = db.query(AwardType).count()
+    system_awards = db.query(AwardType).filter(AwardType.is_system_award == True).count()
+    personal_awards = db.query(AwardType).filter(AwardType.is_personal == True).count()
+    custom_awards = db.query(AwardType).filter(
+        AwardType.is_system_award == False,
+        AwardType.is_personal == False
+    ).count()
 
     logger.info(f"Użytkownicy: {users_count}")
     logger.info(f"Klipy: {clips_count}")
-    logger.info(f"Nagrody: {awards_count}")
+    logger.info(f"Przyznane nagrody: {awards_count}")
+    logger.info(f"Typy nagród (ogółem): {award_types_count}")
+    logger.info(f"  - Systemowe: {system_awards}")
+    logger.info(f"  - Osobiste: {personal_awards}")
+    logger.info(f"  - Custom (publiczne): {custom_awards}")
     logger.info("")
 
     logger.info("Testowe konta:")
     users = db.query(User).all()
     for user in users:
-        logger.info(f"  {user.username:12} | Hasło: <username>123! | Scopes: {len(user.award_scopes)}")
+        admin_badge = " [ADMIN]" if user.is_admin else ""
+        personal_award = db.query(AwardType).filter(
+            AwardType.created_by_user_id == user.id,
+            AwardType.is_personal == True
+        ).first()
+        personal_name = personal_award.display_name if personal_award else "brak"
+        logger.info(f"  {user.username:12} | Hasło: {user.username.capitalize()}123!{admin_badge}")
+        logger.info(f"               | Osobista nagroda: {personal_name}")
 
     logger.info("")
-    logger.info("=" * 50)
+
+    logger.info("Typy nagród:")
+    award_types = db.query(AwardType).order_by(AwardType.is_system_award.desc(), AwardType.name).all()
+    for at in award_types:
+        type_label = "SYSTEM" if at.is_system_award else ("PERSONAL" if at.is_personal else "CUSTOM")
+        icon_info = f"lucide:{at.lucide_icon}" if at.lucide_icon else f"custom:{at.custom_icon_path}"
+        creator = db.query(User).filter(User.id == at.created_by_user_id).first()
+        creator_name = f"by {creator.username}" if creator else ""
+        logger.info(f"  [{type_label:8}] {at.display_name:25} | {icon_info:20} | {creator_name}")
+
+    logger.info("")
+    logger.info("=" * 60)
 
 
 def main(clear_first=False):
@@ -242,6 +345,7 @@ def main(clear_first=False):
             clear_database(db)
 
         users = seed_users(db)
+        seed_custom_awards(db, users)
         clips = seed_clips(db, users)
         seed_awards(db, users, clips)
 
