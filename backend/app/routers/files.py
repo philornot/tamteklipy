@@ -698,14 +698,11 @@ async def download_bulk(
 
 @router.get("/thumbnails/{clip_id}")
 async def get_thumbnail(
-        clip_id: int,
-        db: Session = Depends(get_db),
-        current_user: User = Depends(get_current_user)
+    clip_id: int,
+    db: Session = Depends(get_db)
 ):
     """
-    Pobierz miniaturę klipa
-
-    GET /api/files/thumbnails/{clip_id}
+    Pobierz miniaturę klipa (PUBLIC — bez auth)
     """
     clip = db.query(Clip).filter(
         Clip.id == clip_id,
@@ -731,7 +728,7 @@ async def get_thumbnail(
         path=str(thumbnail_path),
         media_type="image/jpeg",
         headers={
-            "Cache-Control": "public, max-age=3600"  # Cache na 1h
+            "Cache-Control": "public, max-age=3600"
         }
     )
 
