@@ -10,7 +10,7 @@ from app.core.dependencies import get_current_user
 from app.core.exceptions import ValidationError, NotFoundError, DuplicateError, DatabaseError
 from app.models.award_type import AwardType
 from app.models.user import User
-from app.schemas.award import AwardTypeResponse
+from app.routers.admin import AwardTypeResponse
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
