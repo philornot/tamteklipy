@@ -116,10 +116,10 @@ function UploadPage() {
           },
         });
 
-        if (result.success) {
-          toast.success(`${result.filename} uploaded!`);
+        if (response.data.success) {
+          toast.success(`${response.data.filename} uploaded!`);
         } else {
-          toast.error(`${result.filename} failed: ${result.message}`);
+          toast.error(`${response.data.filename} failed: ${response.data.message}`);
         }
 
         results.push({
