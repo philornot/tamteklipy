@@ -5,6 +5,7 @@ import LoginPage from "./pages/LoginPage";
 import DashboardPage from "./pages/DashboardPage";
 import NotFoundPage from "./pages/NotFoundPage";
 import ProtectedRoute from "./components/ProtectedRoute";
+import UploadPage from "./pages/UploadPage";
 
 function App() {
   const { user, logout } = useAuth();
@@ -22,6 +23,17 @@ function App() {
             <ProtectedRoute>
               <Layout user={user} onLogout={logout}>
                 <DashboardPage />
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/upload"
+          element={
+            <ProtectedRoute>
+              <Layout user={user} onLogout={logout}>
+                <UploadPage />
               </Layout>
             </ProtectedRoute>
           }

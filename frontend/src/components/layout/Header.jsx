@@ -1,5 +1,5 @@
 import { Link, useNavigate } from "react-router-dom";
-import { LogOut, Home, Award } from "lucide-react";
+import { LogOut, Home, Award, Upload } from "lucide-react";
 
 function Header({ user, onLogout }) {
   const navigate = useNavigate();
@@ -38,6 +38,14 @@ function Header({ user, onLogout }) {
               >
                 <Award size={20} />
                 <span>Nagrody</span>
+              </Link>
+
+              <Link
+                to="/upload"
+                className="flex items-center gap-2 text-gray-300 hover:text-white transition"
+              >
+                <Upload size={20} />
+                <span>Upload</span>
               </Link>
 
               {/* User info */}
