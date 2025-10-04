@@ -12,11 +12,17 @@ class AwardType(Base):
     __tablename__ = "award_types"
 
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(100), unique=True, nullable=False, index=True)  # np. "award:epic_clip"
-    display_name = Column(String(100), nullable=False)  # "Epic Clip"
-    description = Column(Text, nullable=True)  # "Za epicki moment w grze"
-    icon = Column(String(50), default="🏆", nullable=False)  # Emoji lub path do ikony
-    color = Column(String(7), default="#FFD700", nullable=False)  # Hex color
+    name = Column(String(100), unique=True, nullable=False, index=True)
+    display_name = Column(String(100), nullable=False)
+    description = Column(Text, nullable=True)
+    icon = Column(String(50), default="🏆", nullable=False)  # Emoji fallback
+    color = Column(String(7), default="#FFD700", nullable=False)
+
+    # NEW: Path to uploaded icon image
+    icon_path = Column(String(500), nullable=True)
+
+    # NEW: User ownership (null = system award)
+    created_by_user_id = Column(Integer, nullable=True, index=True)
 
     def __repr__(self):
         return f"<AwardType(name='{self.name}', display_name='{self.display_name}')>"

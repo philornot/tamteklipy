@@ -84,12 +84,23 @@ async def startup_event():
     logger.info(f"{settings.app_name} startuje...")
     logger.info(f"Environment: {settings.environment}")
 
-    # NOWE: Inicjalizuj bazę danych
+    # Inicjalizuj bazę danych
     try:
         init_db()
         logger.info("Baza danych gotowa")
     except Exception as e:
         logger.error(f"Błąd inicjalizacji bazy danych: {e}")
+
+    # Utwórz katalog ikon nagród
+    try:
+        icons_dir = Path(settings.award_icons_path)
+        if settings.environment == "development":
+            icons_dir = Path("uploads/award_icons")
+
+        icons_dir.mkdir(parents=True, exist_ok=True)
+        logger.info(f"Award icons directory: {icons_dir}")
+    except Exception as e:
+        logger.error(f"Błąd tworzenia katalogu ikon nagród: {e}")
 
     logger.info("Dokumentacja dostępna na: http://localhost:8000/docs")
 

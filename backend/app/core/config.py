@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     app_name: str = "TamteKlipy API"
     environment: str = "development"
 
+    # Awards
+    award_icons_path: str = "/mnt/tamteklipy/award_icons"
+
     # Database
     database_url: str = "sqlite:///./tamteklipy.db"
 
