@@ -1,5 +1,5 @@
 import { Link, useNavigate } from "react-router-dom";
-import { Award, Home, LogOut, Upload } from "lucide-react";
+import { Award, Home, LogOut, Upload, Settings } from "lucide-react";
 
 function Header({ user, onLogout }) {
   const navigate = useNavigate();
@@ -33,14 +33,6 @@ function Header({ user, onLogout }) {
               </Link>
 
               <Link
-                to="/awards"
-                className="flex items-center gap-2 text-gray-300 hover:text-white transition"
-              >
-                <Award size={20} />
-                <span>Nagrody</span>
-              </Link>
-
-              <Link
                 to="/my-awards"
                 className="flex items-center gap-2 text-gray-300 hover:text-white transition"
               >
@@ -56,22 +48,13 @@ function Header({ user, onLogout }) {
                 <span>Upload</span>
               </Link>
 
-              {user?.award_scopes?.includes("admin") && (
-                <Link
-                  to="/admin"
-                  className="flex items-center gap-2 text-gray-300 hover:text-white transition"
-                >
-                  <Settings size={20} />
-                  <span>Admin</span>
-                </Link>
-              )}
-
               {/* Panel zakładka dla admina */}
               {user?.award_scopes?.includes("admin") && (
                 <Link
                   to="/admin"
-                  className="flex items-center gap-2 text-blue-400 hover:text-white font-semibold transition border border-blue-400 rounded px-2 py-1"
+                  className="flex items-center gap-2 text-blue-400 hover:text-blue-300 font-semibold transition border border-blue-400 hover:border-blue-300 rounded px-3 py-1"
                 >
+                  <Settings size={16} />
                   <span>Panel</span>
                 </Link>
               )}

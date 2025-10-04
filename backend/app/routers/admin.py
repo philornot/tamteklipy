@@ -13,10 +13,12 @@ from app.core.exceptions import NotFoundError, DuplicateError, AuthorizationErro
     StorageError
 from app.models.award_type import AwardType
 from app.models.user import User
-from fastapi import APIRouter, Depends, status, File, UploadFile
+from app.models.clip import Clip
+from fastapi import APIRouter, Depends, status, File, UploadFile, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import SQLAlchemyError
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -88,7 +90,7 @@ async def create_award_type(
         db.commit()
         db.refresh(new_award_type)
         logger.info(f"AwardType created: {new_award_type.name} by {admin_user.username}")
-    except Exception as e:
+    except SQLAlchemyError as e:
         db.rollback()
         logger.error(f"Failed to create AwardType: {e}")
         raise DatabaseError(message="Nie można utworzyć typu nagrody", operation="create_award_type")
@@ -182,14 +184,14 @@ async def upload_award_icon(
             try:
                 old_path.unlink()
                 logger.info(f"Deleted old icon: {old_path}")
-            except Exception as e:
+            except OSError as e:
                 logger.warning(f"Could not delete old icon: {e}")
 
     # Zapisz nowy plik
     try:
         with open(file_path, "wb") as f:
             f.write(content)
-    except Exception as e:
+    except OSError as e:
         logger.error(f"Failed to save icon: {e}")
         raise StorageError(message="Nie można zapisać ikony", path=str(file_path))
 
@@ -199,11 +201,11 @@ async def upload_award_icon(
 
     try:
         db.commit()
-    except Exception as e:
+    except SQLAlchemyError as e:
         # Jeśli commit fail, usuń plik
         try:
             file_path.unlink()
-        except:
+        except OSError:
             pass
         db.rollback()
         raise DatabaseError(message="Nie można zaktualizować typu nagrody")
@@ -275,3 +277,236 @@ async def get_all_users(
         }
         for u in users
     ]
+
+
+@router.delete("/clips/{clip_id}")
+async def delete_clip(
+        clip_id: int,
+        db: Session = Depends(get_db),
+        admin_user: User = Depends(require_admin)
+):
+    """
+    Usuwa klip (soft delete) - tylko dla adminów
+
+    DELETE /api/admin/clips/{clip_id}
+    """
+    # Znajdź klip
+    clip = db.query(Clip).filter(
+        Clip.id == clip_id,
+        Clip.is_deleted == False
+    ).first()
+
+    if not clip:
+        raise NotFoundError(resource="Klip", resource_id=clip_id)
+
+    try:
+        # Soft delete - oznacz jako usunięty
+        clip.is_deleted = True
+
+        # Opcjonalnie: fizyczne usunięcie plików (zakomentowane dla bezpieczeństwa)
+        # Możesz odkomentować jeśli chcesz faktycznie usuwać pliki z dysku
+        """
+        if clip.file_path:
+            file_path = Path(clip.file_path)
+            if file_path.exists():
+                file_path.unlink()
+                logger.info(f"Deleted file: {file_path}")
+
+        if clip.thumbnail_path:
+            thumb_path = Path(clip.thumbnail_path)
+            if thumb_path.exists():
+                thumb_path.unlink()
+                logger.info(f"Deleted thumbnail: {thumb_path}")
+        """
+
+        db.commit()
+
+        logger.info(f"Admin {admin_user.username} deleted clip {clip_id} ({clip.filename})")
+
+        return {
+            "message": "Klip został usunięty",
+            "clip_id": clip_id,
+            "filename": clip.filename
+        }
+
+    except SQLAlchemyError as e:
+        db.rollback()
+        logger.error(f"Failed to delete clip {clip_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Nie udało się usunąć klipu"
+        )
+
+
+@router.get("/clips/{clip_id}/restore")
+async def restore_clip(
+        clip_id: int,
+        db: Session = Depends(get_db),
+        admin_user: User = Depends(require_admin)
+):
+    """
+    Przywraca usunięty klip - tylko dla adminów
+
+    GET /api/admin/clips/{clip_id}/restore
+    """
+    # Znajdź usunięty klip
+    clip = db.query(Clip).filter(
+        Clip.id == clip_id,
+        Clip.is_deleted == True
+    ).first()
+
+    if not clip:
+        raise NotFoundError(
+            resource="Usunięty klip",
+            resource_id=clip_id,
+            message="Nie znaleziono usuniętego klipu o podanym ID"
+        )
+
+    try:
+        # Przywróć klip
+        clip.is_deleted = False
+        db.commit()
+
+        logger.info(f"Admin {admin_user.username} restored clip {clip_id} ({clip.filename})")
+
+        return {
+            "message": "Klip został przywrócony",
+            "clip_id": clip_id,
+            "filename": clip.filename
+        }
+
+    except SQLAlchemyError as e:
+        db.rollback()
+        logger.error(f"Failed to restore clip {clip_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Nie udało się przywrócić klipu"
+        )
+
+
+@router.patch("/users/{user_id}/deactivate")
+async def deactivate_user(
+        user_id: int,
+        db: Session = Depends(get_db),
+        admin_user: User = Depends(require_admin)
+):
+    """
+    Dezaktywuje użytkownika - tylko dla adminów
+
+    PATCH /api/admin/users/{user_id}/deactivate
+    """
+    if user_id == admin_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Nie możesz dezaktywować własnego konta"
+        )
+
+    user = db.query(User).filter(User.id == user_id).first()
+
+    if not user:
+        raise NotFoundError(resource="Użytkownik", resource_id=user_id)
+
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Użytkownik jest już nieaktywny"
+        )
+
+    user.is_active = False
+    db.commit()
+
+    logger.info(f"Admin {admin_user.username} deactivated user {user_id} ({user.username})")
+
+    return {
+        "message": "Użytkownik został dezaktywowany",
+        "user_id": user_id,
+        "username": user.username
+    }
+
+
+@router.patch("/users/{user_id}/activate")
+async def activate_user(
+        user_id: int,
+        db: Session = Depends(get_db),
+        admin_user: User = Depends(require_admin)
+):
+    """
+    Aktywuje użytkownika - tylko dla adminów
+
+    PATCH /api/admin/users/{user_id}/activate
+    """
+    user = db.query(User).filter(User.id == user_id).first()
+
+    if not user:
+        raise NotFoundError(resource="Użytkownik", resource_id=user_id)
+
+    if user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Użytkownik jest już aktywny"
+        )
+
+    user.is_active = True
+    db.commit()
+
+    logger.info(f"Admin {admin_user.username} activated user {user_id} ({user.username})")
+
+    return {
+        "message": "Użytkownik został aktywowany",
+        "user_id": user_id,
+        "username": user.username
+    }
+
+
+@router.delete("/award-types/{award_type_id}")
+async def delete_award_type(
+        award_type_id: int,
+        db: Session = Depends(get_db),
+        admin_user: User = Depends(require_admin)
+):
+    """
+    Usuwa typ nagrody - tylko dla adminów
+
+    DELETE /api/admin/award-types/{award_type_id}
+    """
+    award_type = db.query(AwardType).filter(AwardType.id == award_type_id).first()
+
+    if not award_type:
+        raise NotFoundError(resource="Typ nagrody", resource_id=award_type_id)
+
+    # Sprawdź czy typ jest używany
+    from app.models.award import Award
+    awards_count = db.query(Award).filter(Award.award_name == award_type.name).count()
+
+    if awards_count > 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Nie można usunąć - typ nagrody jest używany w {awards_count} nagrodach"
+        )
+
+    # Usuń plik ikony jeśli istnieje
+    if award_type.icon_path:
+        icon_path = Path(award_type.icon_path)
+        if icon_path.exists():
+            try:
+                icon_path.unlink()
+                logger.info(f"Deleted icon file: {icon_path}")
+            except OSError as e:
+                logger.warning(f"Could not delete icon file: {e}")
+
+    db.delete(award_type)
+    try:
+        db.commit()
+    except SQLAlchemyError as e:
+        db.rollback()
+        logger.error(f"Failed to delete award type {award_type_id}: {e}")
+        raise HTTPException(status_code=500, detail="Nie udało się usunąć typu nagrody")
+
+    logger.info(f"Admin {admin_user.username} deleted award type {award_type_id} ({award_type.name})")
+
+    return {
+        "message": "Typ nagrody został usunięty",
+        "award_type_id": award_type_id,
+        "name": award_type.name
+    }
+
