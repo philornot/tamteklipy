@@ -40,6 +40,7 @@ class ClipResponse(BaseModel):
     uploader_id: int
     award_count: int = 0
     has_thumbnail: bool = False
+    award_icons: List[dict] = []  # [{award_name, icon_url, count}]
 
     class Config:
         from_attributes = True

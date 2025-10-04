@@ -16,8 +16,8 @@ from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.core.exceptions import FileUploadError, ValidationError, NotFoundError, AuthorizationError, StorageError, \
     DatabaseError
-from app.models.clip import Clip, ClipType
 from app.models.award import Award
+from app.models.clip import Clip, ClipType
 from app.models.user import User
 from app.schemas.clip import ClipResponse, ClipListResponse, ClipDetailResponse
 from app.services.thumbnail_service import generate_thumbnail, extract_video_metadata
@@ -379,31 +379,62 @@ async def list_clips(
     # Pobierz total przed paginacją
     total = query.count()
 
-    # Zastosuj paginację
-    clips = query.offset(offset).limit(limit).all()
+    from app.models.award_type import AwardType
+    from sqlalchemy.orm import joinedload
 
-    # Oblicz liczbę stron
-    pages = (total + limit - 1) // limit
+    # Pobierz nagrody dla klipów (eager loading)
+    clips = query.options(
+        joinedload(Clip.awards).joinedload(Award.user)
+    ).offset(offset).limit(limit).all()
+
+    # Przygotuj mapę AwardType
+    all_award_names = set()
+    for clip in clips:
+        for award in clip.awards:
+            all_award_names.add(award.award_name)
+
+    award_types = db.query(AwardType).filter(AwardType.name.in_(all_award_names)).all() if all_award_names else []
+    award_types_map = {at.name: at for at in award_types}
 
     # Konwertuj do response
-    clips_response = [
-        ClipResponse(
-            id=clip.id,
-            filename=clip.filename,
-            clip_type=clip.clip_type.value,
-            file_size=clip.file_size,
-            file_size_mb=clip.file_size_mb,
-            duration=clip.duration,
-            width=clip.width,
-            height=clip.height,
-            created_at=clip.created_at,
-            uploader_username=clip.uploader.username,
-            uploader_id=clip.uploader_id,
-            award_count=clip.award_count,
-            has_thumbnail=clip.thumbnail_path is not None
+    clips_response = []
+    for clip in clips:
+        # Group awards by type
+        award_counts = {}
+        for award in clip.awards:
+            award_counts[award.award_name] = award_counts.get(award.award_name, 0) + 1
+
+        # Przygotuj award_icons
+        award_icons = []
+        for award_name, count in award_counts.items():
+            award_type = award_types_map.get(award_name)
+            icon_url = f"/api/admin/award-types/{award_type.id}/icon" if (award_type and award_type.icon_path) else None
+
+            award_icons.append({
+                "award_name": award_name,
+                "icon_url": icon_url,
+                "icon": award_type.icon if award_type else "🏆",
+                "count": count
+            })
+
+        clips_response.append(
+            ClipResponse(
+                id=clip.id,
+                filename=clip.filename,
+                clip_type=clip.clip_type.value,
+                file_size=clip.file_size,
+                file_size_mb=clip.file_size_mb,
+                duration=clip.duration,
+                width=clip.width,
+                height=clip.height,
+                created_at=clip.created_at,
+                uploader_username=clip.uploader.username,
+                uploader_id=clip.uploader_id,
+                award_count=clip.award_count,
+                has_thumbnail=clip.thumbnail_path is not None,
+                award_icons=award_icons  # NEW
+            )
         )
-        for clip in clips
-    ]
 
     return ClipListResponse(
         clips=clips_response,
