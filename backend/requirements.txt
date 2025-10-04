@@ -5,7 +5,7 @@ pydantic-settings
 fastapi
 uvicorn
 python-multipart
-sqlalchemy==2.0.23
+sqlalchemy>=2.0.36
 email-validator
 alembic
 aiofiles==23.2.1
