@@ -56,6 +56,16 @@ function Header({ user, onLogout }) {
                 <span>Upload</span>
               </Link>
 
+              {user?.award_scopes?.includes("admin") && (
+                <Link
+                  to="/admin"
+                  className="flex items-center gap-2 text-gray-300 hover:text-white transition"
+                >
+                  <Settings size={20} />
+                  <span>Admin</span>
+                </Link>
+              )}
+
               {/* User info */}
               <div className="flex items-center gap-4 ml-4 pl-4 border-l border-gray-700">
                 <span className="text-gray-400">{user.username}</span>

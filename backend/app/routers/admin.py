@@ -210,3 +210,27 @@ async def get_award_icon(
             "Cache-Control": "public, max-age=86400"
         }
     )
+
+
+@router.get("/users")
+async def get_all_users(
+        db: Session = Depends(get_db),
+        admin_user: User = Depends(require_admin)
+):
+    """
+    Lista wszystkich użytkowników (admin only)
+    GET /api/admin/users
+    """
+    users = db.query(User).all()
+
+    return [
+        {
+            "id": u.id,
+            "username": u.username,
+            "email": u.email,
+            "full_name": u.full_name,
+            "is_active": u.is_active,
+            "award_scopes": u.award_scopes or []
+        }
+        for u in users
+    ]
