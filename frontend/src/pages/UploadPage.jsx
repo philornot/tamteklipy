@@ -9,6 +9,7 @@ import {
   CheckCircle,
 } from "lucide-react";
 import api from "../services/api";
+import toast from "react-hot-toast";
 
 function UploadPage() {
   const [selectedFiles, setSelectedFiles] = useState([]);
@@ -114,6 +115,12 @@ function UploadPage() {
             );
           },
         });
+
+        if (result.success) {
+          toast.success(`${result.filename} uploaded!`);
+        } else {
+          toast.error(`${result.filename} failed: ${result.message}`);
+        }
 
         results.push({
           filename: fileObj.file.name,
