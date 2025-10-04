@@ -107,7 +107,7 @@ function LoginPage() {
         {/* Test credentials hint */}
         <div className="mt-6 pt-6 border-t border-gray-700">
           <p className="text-gray-500 text-sm text-center">
-            Testowe konta: admin, gamer1, gamer2
+            todo: tutaj napisz później coś mądrego
           </p>
         </div>
       </div>
