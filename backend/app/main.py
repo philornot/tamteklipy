@@ -23,6 +23,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from sqlalchemy.exc import SQLAlchemyError
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 
 # Konfiguracja logowania
 setup_logging(log_level="INFO")
@@ -197,6 +199,25 @@ app.include_router(files.router, prefix="/api/files", tags=["Pliki"])
 app.include_router(awards.router, prefix="/api/awards", tags=["Nagrody"])
 app.include_router(my_awards.router, prefix="/api/my-awards", tags=["My Custom Awards"])
 app.include_router(admin.router, prefix="/api/admin", tags=["Admin"])
+
+frontend_dist = Path("../frontend/dist")
+if frontend_dist.exists():
+    app.mount("/assets", StaticFiles(directory=str(frontend_dist / "assets")), name="assets")
+
+
+    @app.get("/{full_path:path}")
+    async def serve_frontend(full_path: str):
+        # API routes już są obsłużone wyżej
+        if full_path.startswith("api/"):
+            return {"error": "Not found"}
+
+        # Próbuj zwrócić plik
+        file_path = frontend_dist / full_path
+        if file_path.exists() and file_path.is_file():
+            return FileResponse(file_path)
+
+        # Fallback do index.html (dla React Router)
+        return FileResponse(frontend_dist / "index.html")
 
 if __name__ == "__main__":
     import uvicorn
