@@ -3,10 +3,12 @@ SQLAlchemy model dla Clip (klipy i screenshoty)
 """
 import enum
 from datetime import datetime
+from pathlib import Path
 
 from app.core.database import Base
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Enum as SQLEnum
 from sqlalchemy.orm import relationship
+from sqlalchemy.orm import validates
 
 
 class ClipType(str, enum.Enum):
