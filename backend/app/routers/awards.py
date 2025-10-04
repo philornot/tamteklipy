@@ -1,5 +1,3 @@
-# backend/app/routers/awards.py
-
 """
 Router dla systemu nagród — przyznawanie i zarządzanie nagrodami
 """
