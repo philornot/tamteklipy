@@ -7,6 +7,7 @@ from pathlib import Path
 
 from app.core.database import Base
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Enum as SQLEnum
+from sqlalchemy import event
 from sqlalchemy.orm import relationship
 from sqlalchemy.orm import validates
 
@@ -92,3 +93,36 @@ class Clip(Base):
             )
 
         return value
+
+
+@event.listens_for(Clip, 'before_insert')
+@event.listens_for(Clip, 'before_update')
+def validate_clip_paths(mapper, connection, target):
+    """
+    Event listener - waliduje ścieżki przed zapisem do bazy
+
+    Args:
+        mapper: SQLAlchemy mapper
+        connection: Database connection
+        target: Instance of Clip being saved
+
+    Raises:
+        ValueError: Jeśli ścieżki nie są absolutne
+    """
+    from pathlib import Path
+
+    # Waliduj file_path
+    if target.file_path:
+        if not Path(target.file_path).is_absolute():
+            raise ValueError(
+                f"file_path musi być absolutną ścieżką. "
+                f"Otrzymano: {target.file_path}"
+            )
+
+    # Waliduj thumbnail_path (jeśli nie None)
+    if target.thumbnail_path:
+        if not Path(target.thumbnail_path).is_absolute():
+            raise ValueError(
+                f"thumbnail_path musi być absolutną ścieżką. "
+                f"Otrzymano: {target.thumbnail_path}"
+            )
