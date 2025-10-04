@@ -1,10 +1,12 @@
+# backend/app/routers/awards.py
+
 """
 Router dla systemu nagród — przyznawanie i zarządzanie nagrodami
 """
 import logging
 
 from app.core.database import get_db
-from app.core.dependencies import get_current_user, require_scope
+from app.core.dependencies import get_current_user
 from app.core.exceptions import NotFoundError, ValidationError, AuthorizationError, DuplicateError
 from app.models.award import Award
 from app.models.award_type import AwardType
@@ -23,30 +25,6 @@ from sqlalchemy.orm import Session, joinedload
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-
-# Mapowanie scope -> display info
-AWARD_DEFINITIONS = {
-    "award:epic_clip": {
-        "display_name": "Epic Clip",
-        "description": "Za epicki moment w grze",
-        "icon": "🔥"
-    },
-    "award:funny": {
-        "display_name": "Funny Moment",
-        "description": "Za zabawną sytuację",
-        "icon": "😂"
-    },
-    "award:pro_play": {
-        "display_name": "Pro Play",
-        "description": "Za profesjonalną zagrywkę",
-        "icon": "⭐"
-    },
-    "award:clutch": {
-        "display_name": "Clutch",
-        "description": "Za clutch w trudnej sytuacji",
-        "icon": "💪"
-    }
-}
 
 
 @router.get("/user/{username}", response_model=dict)
@@ -150,42 +128,25 @@ async def get_my_awards(
 ):
     """
     Pobierz nagrody które aktualny użytkownik może przyznawać
+    Używa User.can_give_award() do filtrowania
     """
     available_awards = []
 
-    # Pobierz wszystkie AwardTypes dla scope usera
-    award_types = db.query(AwardType).filter(
-        AwardType.name.in_(current_user.award_scopes or [])
-    ).all()
+    # Pobierz wszystkie typy nagród z bazy
+    all_award_types = db.query(AwardType).all()
 
-    award_types_map = {at.name: at for at in award_types}
-
-    for scope in current_user.award_scopes or []:
-        award_type = award_types_map.get(scope)
-
-        if award_type:
+    for award_type in all_award_types:
+        # Sprawdź czy user może przyznać tę nagrodę
+        if current_user.can_give_award(award_type):
             available_awards.append(
                 UserAwardScope(
                     award_name=award_type.name,
                     display_name=award_type.display_name,
                     description=award_type.description,
                     icon=award_type.icon,
-                    icon_url=f"/api/admin/award-types/{award_type.id}/icon" if award_type.icon_path else None
+                    icon_url=f"/api/admin/award-types/{award_type.id}/icon" if award_type.custom_icon_path else None
                 )
             )
-        else:
-            # Fallback dla starych scope bez AwardType
-            if scope in AWARD_DEFINITIONS:
-                definition = AWARD_DEFINITIONS[scope]
-                available_awards.append(
-                    UserAwardScope(
-                        award_name=scope,
-                        display_name=definition["display_name"],
-                        description=definition["description"],
-                        icon=definition["icon"],
-                        icon_url=None
-                    )
-                )
 
     return MyAwardsResponse(available_awards=available_awards)
 
@@ -202,7 +163,6 @@ async def give_award_to_clip(
 
     POST /api/awards/clips/{clip_id}
     Body: { "award_name": "award:epic_clip" }
-    Wymaga: Authorization header z odpowiednim scope
     """
     award_name = award_data.award_name
 
@@ -215,25 +175,23 @@ async def give_award_to_clip(
     if not clip:
         raise NotFoundError(resource="Klip", resource_id=clip_id)
 
-    # 2. Waliduj czy award_name jest poprawny
-    if award_name not in AWARD_DEFINITIONS:
+    # 2. Pobierz AwardType z bazy (zamiast AWARD_DEFINITIONS)
+    award_type = db.query(AwardType).filter(
+        AwardType.name == award_name
+    ).first()
+
+    if not award_type:
         raise ValidationError(
             message=f"Nieznany typ nagrody: {award_name}",
             field="award_name",
-            details={
-                "received": award_name,
-                "allowed": list(AWARD_DEFINITIONS.keys())
-            }
+            details={"received": award_name}
         )
 
-    # 3. Sprawdź czy użytkownik ma uprawnienia do tej nagrody
-    if not current_user.has_scope(award_name):
+    # 3. Sprawdź czy użytkownik może przyznać tę nagrodę
+    if not current_user.can_give_award(award_type):
         raise AuthorizationError(
             message=f"Nie masz uprawnień do przyznania nagrody: {award_name}",
-            details={
-                "required_scope": award_name,
-                "user_scopes": current_user.award_scopes
-            }
+            details={"award_type": award_type.display_name}
         )
 
     # 4. Sprawdź czy użytkownik już nie przyznał tej nagrody
@@ -247,7 +205,7 @@ async def give_award_to_clip(
         raise DuplicateError(
             resource="Nagroda",
             field="award",
-            value=f"Użytkownik {current_user.username} już przyznał {award_name} do klipa {clip_id}"
+            value=f"Już przyznałeś {award_type.display_name} do tego klipa"
         )
 
     # 5. Utwórz nagrodę
@@ -287,7 +245,7 @@ async def give_award_to_clip(
 async def remove_award_from_clip(
         clip_id: int,
         award_id: int,
-        permanent: bool = False,  # Query param dla hard delete
+        permanent: bool = False,
         db: Session = Depends(get_db),
         current_user: User = Depends(get_current_user)
 ):
@@ -295,10 +253,6 @@ async def remove_award_from_clip(
     Usuń nagrodę z klipa (tylko własną)
 
     DELETE /api/awards/clips/{clip_id}/awards/{award_id}?permanent=false
-    Query params:
-        - permanent: bool (default: False) - True = hard delete, False = soft delete
-
-    Wymaga: Authorization header
     """
     # Znajdź nagrodę
     award = db.query(Award).filter(
@@ -310,12 +264,12 @@ async def remove_award_from_clip(
         raise NotFoundError(resource="Nagroda", resource_id=award_id)
 
     # Sprawdź czy użytkownik jest właścicielem nagrody
-    if award.user_id != current_user.id:
+    if award.user_id != current_user.id and not current_user.is_admin:
         raise AuthorizationError(
             message="Możesz usunąć tylko swoje nagrody"
         )
 
-    # Usuń nagrodę (na razie zawsze hard delete, todo: soft delete do implementacji później)
+    # Usuń nagrodę
     try:
         db.delete(award)
         db.commit()
@@ -452,7 +406,7 @@ async def get_award_stats(
     # Całkowita liczba nagród
     total_awards = db.query(func.count(Award.id)).scalar() or 0
 
-    # Najpopularniejszy typ nagrody
+    # Najpopularniejszy typ nagrody z join do AwardType
     most_popular = db.query(
         Award.award_name,
         func.count(Award.id).label('count')
@@ -461,6 +415,13 @@ async def get_award_stats(
     ).order_by(
         func.count(Award.id).desc()
     ).first()
+
+    # Pobierz AwardType dla najpopularniejszej nagrody
+    most_popular_type = None
+    if most_popular:
+        most_popular_type = db.query(AwardType).filter(
+            AwardType.name == most_popular[0]
+        ).first()
 
     # Najbardziej aktywni użytkownicy (top 5)
     most_active_users = db.query(
@@ -509,8 +470,8 @@ async def get_award_stats(
         "most_popular_award": {
             "award_name": most_popular[0] if most_popular else None,
             "count": most_popular[1] if most_popular else 0,
-            "display_name": AWARD_DEFINITIONS.get(most_popular[0], {}).get("display_name") if most_popular else None,
-            "icon": AWARD_DEFINITIONS.get(most_popular[0], {}).get("icon") if most_popular else None
+            "display_name": most_popular_type.display_name if most_popular_type else None,
+            "icon": most_popular_type.icon if most_popular_type else None
         },
         "most_active_users": [
             {
