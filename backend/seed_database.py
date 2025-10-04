@@ -56,28 +56,12 @@ def seed_users(db):
 
     users_data = [
         {
-            "username": "admin",
-            "email": None,  # Brak emaila
-            "password": "admin",  # Proste hasło
-            "full_name": "Administrator",
-            "is_admin": True,
-            "award_scopes": ["award:epic_clip", "award:funny", "award:clutch", "award:wtf"]
-        },
-        {
-            "username": "filip",
+            "username": "philornot",
             "email": None,
-            "password": "filip",
+            "password": "HasloFilipa",
             "full_name": "Filip",
-            "is_admin": False,
-            "award_scopes": ["award:epic_clip", "award:clutch"]
-        },
-        {
-            "username": "kuba",
-            "email": None,
-            "password": "kuba",
-            "full_name": "Kuba",
-            "is_admin": False,
-            "award_scopes": ["award:funny", "award:wtf"]
+            "is_admin": True,
+            "award_scopes": []
         }
     ]
 
