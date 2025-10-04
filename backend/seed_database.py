@@ -235,11 +235,26 @@ def seed_clips(db, users):
 
         uploader = users[idx % len(users)]
 
+        # absolutna ścieżka z settings (TK-504)
+        if settings.environment == "development":
+            clips_dir = Path("uploads/clips")
+        else:
+            clips_dir = Path(settings.clips_path)
+
+        file_path = str(clips_dir / "video.mp4")
+
+        # absolutna ścieżka z settings (TK-499)
+        if settings.environment == "development":
+            thumbnails_dir = Path("uploads/thumbnails")
+        else:
+            thumbnails_dir = Path(settings.thumbnails_path)
+
+        thumbnail_path = str(thumbnails_dir / "thumb.jpg")
+
         clip = Clip(
             filename=clip_data["filename"],
-            file_path=f"/clips/{clip_data['filename']}",
-            thumbnail_path=f"/thumbnails/{clip_data['filename']}.jpg" if clip_data[
-                                                                             "clip_type"] == ClipType.VIDEO else None,
+            file_path=file_path,
+            thumbnail_path=thumbnail_path,
             clip_type=clip_data["clip_type"],
             file_size=clip_data["file_size"],
             duration=clip_data["duration"],
