@@ -1,5 +1,5 @@
 """
-Router dla systemu nagród - przyznawanie i zarządzanie nagrodami
+Router dla systemu nagród — przyznawanie i zarządzanie nagrodami
 """
 import logging
 
@@ -7,6 +7,7 @@ from app.core.database import get_db
 from app.core.dependencies import get_current_user, require_scope
 from app.core.exceptions import NotFoundError, ValidationError, AuthorizationError, DuplicateError
 from app.models.award import Award
+from app.models.award_type import AwardType
 from app.models.clip import Clip
 from app.models.user import User
 from app.schemas.award import (
