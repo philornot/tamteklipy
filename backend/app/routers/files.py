@@ -698,8 +698,8 @@ async def download_bulk(
 
 @router.get("/thumbnails/{clip_id}")
 async def get_thumbnail(
-    clip_id: int,
-    db: Session = Depends(get_db)
+        clip_id: int,
+        db: Session = Depends(get_db)
 ):
     """
     Pobierz miniaturę klipa (PUBLIC — bez auth)
@@ -737,16 +737,10 @@ async def get_thumbnail(
 async def stream_video(
         clip_id: int,
         request: Request,
-        db: Session = Depends(get_db),
-        current_user: User = Depends(get_current_user)
+        db: Session = Depends(get_db)
 ):
     """
-    Stream video z obsługą Range requests (dla video player)
-
-    GET /api/files/stream/{clip_id}
-    Header: Range: bytes=0-1024
-
-    Obsługuje partial content requests dla video streaming
+    Stream video z obsługą Range requests (PUBLIC - bez auth dla <video> tag)
     """
     # Znajdź klip
     clip = db.query(Clip).filter(
