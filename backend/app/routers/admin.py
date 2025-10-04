@@ -1,16 +1,20 @@
 """
-Router dla admina — zarządzanie systemem
+Router dla admina – zarządzanie systemem
 """
 import logging
+from datetime import datetime
+from pathlib import Path
 from typing import List
 
-from app.core.database import get_db
 from app.core.config import settings
+from app.core.database import get_db
 from app.core.dependencies import get_current_user
-from app.core.exceptions import NotFoundError, DuplicateError, AuthorizationError, DatabaseError
+from app.core.exceptions import NotFoundError, DuplicateError, AuthorizationError, DatabaseError, ValidationError, \
+    StorageError
 from app.models.award_type import AwardType
 from app.models.user import User
 from fastapi import APIRouter, Depends, status, File, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -40,11 +44,8 @@ class AwardTypeResponse(BaseModel):
 
 def require_admin(current_user: User = Depends(get_current_user)):
     """Dependency do sprawdzania uprawnień admina"""
-    if "admin" not in (current_user.award_scopes or []):
-        raise AuthorizationError(
-            message="Wymagane uprawnienia administratora",
-            details={"required_scope": "admin"}
-        )
+    if not current_user.is_admin:
+        raise AuthorizationError(message="Wymagane uprawnienia administratora")
     return current_user
 
 
@@ -100,87 +101,119 @@ async def upload_award_icon(
         award_type_id: int,
         file: UploadFile = File(...),
         db: Session = Depends(get_db),
-        admin_user: User = Depends(require_admin)
+        current_user: User = Depends(get_current_user)
 ):
     """
-    Upload ikony dla typu nagrody (hybrid: frontend już zresizował)
+    Upload ikony dla typu nagrody
     POST /api/admin/award-types/{award_type_id}/icon
+
+    Każdy użytkownik może uploadować ikonę do swoich własnych custom nagród.
+    Admin może do wszystkich.
     """
     award_type = db.query(AwardType).filter(AwardType.id == award_type_id).first()
     if not award_type:
         raise NotFoundError(resource="AwardType", resource_id=award_type_id)
 
-    if file.content_type not in ['image/png', 'image/jpeg']:
-        from app.core.exceptions import ValidationError
+    # Sprawdź uprawnienia
+    if not current_user.is_admin:
+        # Nie-admin może tylko do swoich własnych nagród
+        if award_type.created_by_user_id != current_user.id:
+            raise AuthorizationError(message="Możesz uploadować ikony tylko do swoich własnych nagród")
+
+        # Nie można modyfikować systemowych ani osobistych
+        if award_type.is_system_award or award_type.is_personal:
+            raise AuthorizationError(message="Nie można uploadować ikon do systemowych ani osobistych nagród")
+
+    # Walidacja typu pliku
+    if file.content_type not in ['image/png', 'image/jpeg', 'image/webp']:
         raise ValidationError(
-            message="Tylko PNG i JPG są dozwolone",
+            message="Tylko PNG, JPG i WebP są dozwolone",
             field="file",
             details={"received": file.content_type}
         )
 
+    # Walidacja rozmiaru
     content = await file.read()
     file_size = len(content)
-    if file_size > 500 * 1024:
-        from app.core.exceptions import ValidationError
+    max_size = 500 * 1024  # 500KB
+
+    if file_size > max_size:
         raise ValidationError(
-            message="Plik za duży (max 500KB)",
+            message=f"Plik za duży (max {max_size // 1024}KB)",
             field="file",
-            details={"size": file_size}
+            details={"size": file_size, "max_size": max_size}
         )
 
-    from PIL import Image
-    from io import BytesIO
-    try:
-        img = Image.open(BytesIO(content))
-        width, height = img.size
-        if not (118 <= width <= 138 and 118 <= height <= 138):
-            from app.core.exceptions import ValidationError
+    # Minimalna walidacja - plik musi zaczynać się od magic bytes
+    if content[:8] not in [
+        b'\x89PNG\r\n\x1a\n',  # PNG
+        b'\xff\xd8\xff',  # JPEG (pierwsze 3 bajty)
+        b'RIFF',  # WebP (RIFF container)
+    ]:
+        # Sprawdź JPEG dokładniej
+        if not content[:2] == b'\xff\xd8':
             raise ValidationError(
-                message=f"Nieprawidłowe wymiary: {width}x{height}px (oczekiwano ~128x128px)",
-                field="file",
-                details={"width": width, "height": height}
+                message="Nieprawidłowy format pliku",
+                field="file"
             )
-    except Exception:
-        from app.core.exceptions import ValidationError
-        raise ValidationError(
-            message="Nie można odczytać obrazka",
-            field="file"
-        )
 
+    # Katalog na ikony
     icons_dir = Path(settings.award_icons_path)
     if getattr(settings, "environment", "production") == "development":
         icons_dir = Path("uploads/award_icons")
+
     icons_dir.mkdir(parents=True, exist_ok=True)
 
+    # Generuj nazwę pliku
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    extension = ".png" if file.content_type == "image/png" else ".jpg"
-    filename = f"{award_type_id}_{timestamp}{extension}"
+    extension = {
+        "image/png": ".png",
+        "image/jpeg": ".jpg",
+        "image/webp": ".webp"
+    }.get(file.content_type, ".png")
+
+    filename = f"award_{award_type_id}_{timestamp}{extension}"
     file_path = icons_dir / filename
 
-    if getattr(award_type, "icon_path", None):
-        old_path = Path(award_type.icon_path)
+    # Usuń starą ikonę jeśli istnieje
+    if award_type.custom_icon_path:
+        old_path = Path(award_type.custom_icon_path)
         if old_path.exists():
             try:
                 old_path.unlink()
-            except Exception:
-                pass
+                logger.info(f"Deleted old icon: {old_path}")
+            except Exception as e:
+                logger.warning(f"Could not delete old icon: {e}")
 
+    # Zapisz nowy plik
     try:
         with open(file_path, "wb") as f:
             f.write(content)
     except Exception as e:
-        from app.core.exceptions import StorageError
         logger.error(f"Failed to save icon: {e}")
         raise StorageError(message="Nie można zapisać ikony", path=str(file_path))
 
-    award_type.icon_path = str(file_path)
-    db.commit()
+    # Zaktualizuj w bazie
+    award_type.custom_icon_path = str(file_path)
+    award_type.lucide_icon = None  # Wyczyść lucide icon jeśli była
 
-    logger.info(f"Icon uploaded for AwardType {award_type_id}: {file_path}")
+    try:
+        db.commit()
+    except Exception as e:
+        # Jeśli commit fail, usuń plik
+        try:
+            file_path.unlink()
+        except:
+            pass
+        db.rollback()
+        raise DatabaseError(message="Nie można zaktualizować typu nagrody")
+
+    logger.info(f"Icon uploaded for AwardType {award_type_id} by {current_user.username}: {file_path}")
 
     return {
         "message": "Ikona uploaded",
-        "icon_url": f"/api/admin/award-types/{award_type_id}/icon"
+        "icon_url": f"/api/admin/award-types/{award_type_id}/icon",
+        "filename": filename
     }
 
 
@@ -194,15 +227,22 @@ async def get_award_icon(
     GET /api/admin/award-types/{award_type_id}/icon
     """
     award_type = db.query(AwardType).filter(AwardType.id == award_type_id).first()
-    if not award_type or not getattr(award_type, "icon_path", None):
+    if not award_type or not award_type.custom_icon_path:
         raise NotFoundError(resource="Icon", resource_id=award_type_id)
 
-    icon_path = Path(award_type.icon_path)
+    icon_path = Path(award_type.custom_icon_path)
     if not icon_path.exists():
         logger.error(f"Icon file not found: {icon_path}")
         raise NotFoundError(resource="Icon file", resource_id=award_type_id)
 
-    media_type = "image/png" if icon_path.suffix == ".png" else "image/jpeg"
+    # Określ media type na podstawie rozszerzenia
+    media_type = {
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".webp": "image/webp"
+    }.get(icon_path.suffix.lower(), "image/png")
+
     return FileResponse(
         path=str(icon_path),
         media_type=media_type,
@@ -230,6 +270,7 @@ async def get_all_users(
             "email": u.email,
             "full_name": u.full_name,
             "is_active": u.is_active,
+            "is_admin": u.is_admin,
             "award_scopes": u.award_scopes or []
         }
         for u in users

@@ -7,17 +7,36 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from datetime import datetime, timedelta
-from app.core.database import SessionLocal
+from app.core.database import SessionLocal, engine
 from app.models.user import User
 from app.models.clip import Clip, ClipType
 from app.models.award import Award
 from app.models.award_type import AwardType
 from app.core.security import hash_password
 from app.core.init_db import create_personal_award_for_user
+from sqlalchemy import inspect
 import logging
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def check_database_exists():
+    """Sprawdź czy baza i tabele istnieją"""
+    inspector = inspect(engine)
+    tables = inspector.get_table_names()
+
+    required_tables = ['users', 'clips', 'awards', 'award_types']
+    missing_tables = [t for t in required_tables if t not in tables]
+
+    if missing_tables:
+        logger.error(f"❌ Brakujące tabele: {', '.join(missing_tables)}")
+        logger.error("\n🔧 Rozwiązanie:")
+        logger.error("   python hard_reset.py")
+        logger.error("   python seed_database.py --clear")
+        return False
+
+    return True
 
 
 def clear_database(db):
@@ -38,35 +57,27 @@ def seed_users(db):
     users_data = [
         {
             "username": "admin",
-            "email": "admin@tamteklipy.local",
-            "password": "Admin123!",
+            "email": None,  # Brak emaila
+            "password": "admin",  # Proste hasło
             "full_name": "Administrator",
             "is_admin": True,
             "award_scopes": ["award:epic_clip", "award:funny", "award:clutch", "award:wtf"]
         },
         {
-            "username": "gamer1",
-            "email": "gamer1@tamteklipy.local",
-            "password": "Gamer123!",
-            "full_name": "Pro Gamer",
+            "username": "filip",
+            "email": None,
+            "password": "filip",
+            "full_name": "Filip",
             "is_admin": False,
             "award_scopes": ["award:epic_clip", "award:clutch"]
         },
         {
-            "username": "gamer2",
-            "email": "gamer2@tamteklipy.local",
-            "password": "Gamer123!",
-            "full_name": "Casual Player",
+            "username": "kuba",
+            "email": None,
+            "password": "kuba",
+            "full_name": "Kuba",
             "is_admin": False,
             "award_scopes": ["award:funny", "award:wtf"]
-        },
-        {
-            "username": "viewer",
-            "email": "viewer@tamteklipy.local",
-            "password": "Viewer123!",
-            "full_name": "Just Watching",
-            "is_admin": False,
-            "award_scopes": ["award:funny"]
         }
     ]
 
@@ -80,6 +91,7 @@ def seed_users(db):
 
             # Upewnij się że ma osobistą nagrodę
             create_personal_award_for_user(
+                db,
                 existing.id,
                 existing.username,
                 existing.full_name or existing.username
@@ -101,6 +113,7 @@ def seed_users(db):
 
         # Utwórz osobistą nagrodę dla użytkownika
         create_personal_award_for_user(
+            db,
             user.id,
             user.username,
             user.full_name or user.username
@@ -122,34 +135,49 @@ def seed_custom_awards(db, users):
     # gamer1 tworzy swoją custom nagrodę
     gamer1 = next((u for u in users if u.username == "gamer1"), None)
     if gamer1:
-        custom_award = AwardType(
-            name=f"award:custom_gamer1_mvp",
-            display_name="MVP of the Match",
-            description="Za bycie najlepszym graczem w meczu",
-            lucide_icon="crown",
-            color="#FFD700",
-            created_by_user_id=gamer1.id,
-            is_system_award=False,
-            is_personal=False  # Może ją przyznawać każdy
-        )
-        db.add(custom_award)
-        logger.info(f"  ✓ Created custom award by gamer1: {custom_award.display_name}")
+        # Sprawdź czy nie istnieje
+        existing = db.query(AwardType).filter(
+            AwardType.name == "award:custom_gamer1_mvp"
+        ).first()
+
+        if not existing:
+            custom_award = AwardType(
+                name="award:custom_gamer1_mvp",
+                display_name="MVP of the Match",
+                description="Za bycie najlepszym graczem w meczu",
+                lucide_icon="crown",
+                color="#FFD700",
+                created_by_user_id=gamer1.id,
+                is_system_award=False,
+                is_personal=False
+            )
+            db.add(custom_award)
+            logger.info(f"  ✓ Created custom award by gamer1: {custom_award.display_name}")
+        else:
+            logger.info(f"  Custom award by gamer1 already exists, skipping")
 
     # gamer2 tworzy swoją custom nagrodę z custom ikoną
     gamer2 = next((u for u in users if u.username == "gamer2"), None)
     if gamer2:
-        custom_award = AwardType(
-            name=f"award:custom_gamer2_lucky",
-            display_name="Lucky Shot",
-            description="Za szczęśliwy strzał",
-            custom_icon_path="/uploads/award_icons/lucky_shot.png",  # Custom icon
-            color="#4CAF50",
-            created_by_user_id=gamer2.id,
-            is_system_award=False,
-            is_personal=False
-        )
-        db.add(custom_award)
-        logger.info(f"  ✓ Created custom award by gamer2: {custom_award.display_name} (custom icon)")
+        existing = db.query(AwardType).filter(
+            AwardType.name == "award:custom_gamer2_lucky"
+        ).first()
+
+        if not existing:
+            custom_award = AwardType(
+                name="award:custom_gamer2_lucky",
+                display_name="Lucky Shot",
+                description="Za szczęśliwy strzał",
+                custom_icon_path="/uploads/award_icons/lucky_shot.png",
+                color="#4CAF50",
+                created_by_user_id=gamer2.id,
+                is_system_award=False,
+                is_personal=False
+            )
+            db.add(custom_award)
+            logger.info(f"  ✓ Created custom award by gamer2: {custom_award.display_name} (custom icon)")
+        else:
+            logger.info(f"  Custom award by gamer2 already exists, skipping")
 
     db.commit()
     logger.info("Dodatkowe custom nagrody utworzone\n")
@@ -198,6 +226,13 @@ def seed_clips(db, users):
     base_time = datetime.utcnow() - timedelta(days=7)
 
     for idx, clip_data in enumerate(clips_data):
+        # Sprawdź czy clip już istnieje
+        existing = db.query(Clip).filter(Clip.filename == clip_data["filename"]).first()
+        if existing:
+            logger.info(f"  Klip {clip_data['filename']} już istnieje, pomijam")
+            created_clips.append(existing)
+            continue
+
         uploader = users[idx % len(users)]
 
         clip = Clip(
@@ -336,6 +371,12 @@ def print_summary(db):
 
 def main(clear_first=False):
     """Główna funkcja seedowania"""
+
+    # Sprawdź czy baza istnieje
+    if not check_database_exists():
+        logger.error("\n❌ Baza danych nie istnieje lub jest niepełna!")
+        return
+
     db = SessionLocal()
 
     try:

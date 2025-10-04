@@ -112,18 +112,23 @@ async def register(
         User.email == user_data.email
     ).first()
 
-    if existing_email:
-        raise DuplicateError(
-            resource="Użytkownik",
-            field="email",
-            value=user_data.email
-        )
+    if user_data.email:
+        existing_email = db.query(User).filter(
+            User.email == user_data.email
+        ).first()
+
+        if existing_email:
+            raise DuplicateError(
+                resource="Użytkownik",
+                field="email",
+                value=user_data.email
+            )
 
     # Utwórz nowego użytkownika
     new_user = User(
         username=user_data.username.lower(),
         email=user_data.email,
-        hashed_password=hash_password(user_data.password),
+        hashed_password=hash_password(user_data.password) if user_data.password else None,
         full_name=user_data.full_name,
         is_active=user_data.is_active,
         award_scopes=user_data.award_scopes or []

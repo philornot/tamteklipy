@@ -106,11 +106,17 @@ def seed_system_awards():
         db.close()
 
 
-def create_personal_award_for_user(user_id: int, username: str, display_name: str = None) -> AwardType:
+def create_personal_award_for_user(
+        db,  # <-- DODAJ parametr db
+        user_id: int,
+        username: str,
+        display_name: str = None
+) -> AwardType:
     """
     Tworzy osobistą nagrodę dla nowego użytkownika
 
     Args:
+        db: SQLAlchemy session (przekazana z zewnątrz)
         user_id: ID użytkownika
         username: Username użytkownika
         display_name: Wyświetlana nazwa użytkownika
@@ -118,7 +124,6 @@ def create_personal_award_for_user(user_id: int, username: str, display_name: st
     Returns:
         AwardType: Utworzona nagroda
     """
-    db = SessionLocal()
     try:
         # Sprawdź czy użytkownik już ma osobistą nagrodę
         existing = db.query(AwardType).filter(
@@ -143,19 +148,16 @@ def create_personal_award_for_user(user_id: int, username: str, display_name: st
         )
 
         db.add(personal_award)
-        db.commit()
-        db.refresh(personal_award)
+        # USUŃ db.commit() - commit będzie w funkcji wywołującej
+        db.flush()  # Tylko flush, żeby dostać ID
 
         logger.info(f"Created personal award for {username}: {personal_award.name}")
 
         return personal_award
 
     except Exception as e:
-        db.rollback()
         logger.error(f"Błąd podczas tworzenia osobistej nagrody: {e}")
         raise
-    finally:
-        db.close()
 
 
 def drop_db():

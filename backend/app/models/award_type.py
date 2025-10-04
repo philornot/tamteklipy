@@ -1,8 +1,10 @@
 """
 SQLAlchemy model dla AwardType - definicje typów nagród
 """
+from datetime import datetime
+
 from app.core.database import Base
-from sqlalchemy import Column, Integer, String, Text
+from sqlalchemy import Column, Integer, String, Text, Boolean, ForeignKey, DateTime
 
 
 class AwardType(Base):
@@ -17,12 +19,14 @@ class AwardType(Base):
     description = Column(Text, nullable=True)
     icon = Column(String(50), default="🏆", nullable=False)  # Emoji fallback
     color = Column(String(7), default="#FFD700", nullable=False)
-
-    # NEW: Path to uploaded icon image
     icon_path = Column(String(500), nullable=True)
-
-    # NEW: User ownership (null = system award)
-    created_by_user_id = Column(Integer, nullable=True, index=True)
+    is_system_award = Column(Boolean, default=False, nullable=False)
+    is_personal = Column(Boolean, default=False, nullable=False)
+    created_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    lucide_icon = Column(String(100), nullable=True)
+    custom_icon_path = Column(String(500), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     def __repr__(self):
         return f"<AwardType(name='{self.name}', display_name='{self.display_name}')>"

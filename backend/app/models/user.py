@@ -14,12 +14,13 @@ class User(Base):
     # Podstawowe pola
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String(50), unique=True, index=True, nullable=False)
-    email = Column(String(100), unique=True, index=True, nullable=False)
+    email = Column(String(100), nullable=True, index=True)
     hashed_password = Column(String(255), nullable=False)
     full_name = Column(String(100), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
+    is_admin = Column(Boolean, default=False, nullable=False)
 
-    # Scope-based permissions
+    # Scope-based permissions (deprecated - używamy teraz is_admin + system uprawnień)
     award_scopes = Column(JSON, default=list, nullable=False)
 
     # Relacje
@@ -27,7 +28,7 @@ class User(Base):
     awards_given = relationship("Award", back_populates="user", cascade="all, delete-orphan")
 
     def __repr__(self):
-        return f"<User(id={self.id}, username='{self.username}', email='{self.email}')>"
+        return f"<User(id={self.id}, username='{self.username}', email='{self.email}', admin={self.is_admin})>"
 
     def has_scope(self, scope: str) -> bool:
         """
@@ -40,3 +41,28 @@ class User(Base):
             True jeśli użytkownik ma scope, False w przeciwnym razie
         """
         return scope in (self.award_scopes or [])
+
+    def can_give_award(self, award_type) -> bool:
+        """
+        Sprawdza czy użytkownik może przyznać daną nagrodę
+
+        Args:
+            award_type: Obiekt AwardType
+
+        Returns:
+            True jeśli użytkownik może przyznać nagrodę
+        """
+        # Admin może przyznać wszystkie nagrody
+        if self.is_admin:
+            return True
+
+        # Systemowe nagrody może przyznać każdy
+        if award_type.is_system_award:
+            return True
+
+        # Osobiste nagrody może przyznać tylko twórca
+        if award_type.is_personal:
+            return award_type.created_by_user_id == self.id
+
+        # Custom publiczne nagrody może przyznać każdy
+        return True
