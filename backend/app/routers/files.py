@@ -436,6 +436,8 @@ async def list_clips(
             )
         )
 
+    pages = (total + limit - 1) // limit  # Dodano wyliczanie liczby stron
+
     return ClipListResponse(
         clips=clips_response,
         total=total,
