@@ -62,3 +62,31 @@ class Clip(Base):
     def file_size_mb(self) -> float:
         """Zwraca rozmiar pliku w MB"""
         return round(self.file_size / (1024 * 1024), 2) if self.file_size else 0
+
+    @validates('file_path', 'thumbnail_path')
+    def validate_path_is_absolute(self, key, value):
+        """
+        Waliduje, że ścieżki są absolutne przy zapisie do bazy
+
+        Args:
+            key: Nazwa pola (file_path lub thumbnail_path)
+            value: Wartość ścieżki
+
+        Returns:
+            str: Zwalidowana ścieżka
+
+        Raises:
+            ValueError: Jeśli ścieżka nie jest absolutna
+        """
+        if value is None:
+            return value
+
+        path = Path(value)
+
+        if not path.is_absolute():
+            raise ValueError(
+                f"{key} musi być ścieżką absolutną. "
+                f"Otrzymano: {value}"
+            )
+
+        return value
