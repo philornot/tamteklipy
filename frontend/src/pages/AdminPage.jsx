@@ -12,7 +12,7 @@ function AdminPage() {
   const [activeTab, setActiveTab] = useState("clips");
 
   // Check admin permission
-  if (!user?.award_scopes?.includes("admin")) {
+  if (!user?.is_admin) {
     return <Navigate to="/dashboard" replace />;
   }
 

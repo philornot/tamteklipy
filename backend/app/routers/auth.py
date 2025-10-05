@@ -150,4 +150,10 @@ async def read_me(current_user: User = Depends(get_current_user)):
 
     GET /api/auth/me
     """
+    # DEBUG: Log przed zwróceniem
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"User {current_user.username}: is_admin={current_user.is_admin}")
+    logger.info(f"Full user object: {current_user}")
+
     return current_user

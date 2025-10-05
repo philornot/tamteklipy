@@ -12,6 +12,7 @@ class UserBase(BaseModel):
     email: Optional[str] = Field(None, max_length=100)  # Opcjonalny
     full_name: Optional[str] = Field(None, max_length=100)
     is_active: bool = True
+    is_admin: bool = False
 
 
 class UserCreate(UserBase):
@@ -78,6 +79,7 @@ class UserInDB(UserBase):
 class UserResponse(UserBase):
     """Schema użytkownika w odpowiedzi API (bez hasła)"""
     id: int
+    is_admin: bool = False
     award_scopes: List[str] = Field(default_factory=list)
 
     class Config:

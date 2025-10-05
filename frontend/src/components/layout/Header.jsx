@@ -49,7 +49,7 @@ function Header({ user, onLogout }) {
               </Link>
 
               {/* Panel zakładka dla admina */}
-              {user?.award_scopes?.includes("admin") && (
+              {user?.is_admin && (
                 <Link
                   to="/admin"
                   className="flex items-center gap-2 text-blue-400 hover:text-blue-300 font-semibold transition border border-blue-400 hover:border-blue-300 rounded px-3 py-1"
