@@ -1,9 +1,16 @@
 import { useState } from "react";
-import { Award, BarChart3, Users, Film } from "lucide-react";
+import {
+  Award,
+  BarChart3,
+  Users,
+  Film,
+  Award as AwardIcon,
+} from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { Navigate } from "react-router-dom";
 import StatsPanel from "../components/admin/StatsPanel.jsx";
 import UsersManager from "../components/admin/UsersManager.jsx";
+import AwardsManager from "../components/admin/AwardsManager.jsx";
 import AwardTypesManager from "../components/admin/AwardTypesManager.jsx";
 import ClipsManager from "../components/admin/ClipsManager.jsx";
 
@@ -21,10 +28,10 @@ function AdminPage() {
       <h1 className="text-3xl font-bold mb-6">Panel Administracyjny</h1>
 
       {/* Tabs */}
-      <div className="flex gap-4 mb-6 border-b border-gray-700">
+      <div className="flex gap-4 mb-6 border-b border-gray-700 overflow-x-auto">
         <button
           onClick={() => setActiveTab("clips")}
-          className={`px-4 py-2 flex items-center gap-2 ${
+          className={`px-4 py-2 flex items-center gap-2 whitespace-nowrap ${
             activeTab === "clips"
               ? "border-b-2 border-blue-500 text-white"
               : "text-gray-400"
@@ -35,7 +42,7 @@ function AdminPage() {
         </button>
         <button
           onClick={() => setActiveTab("users")}
-          className={`px-4 py-2 flex items-center gap-2 ${
+          className={`px-4 py-2 flex items-center gap-2 whitespace-nowrap ${
             activeTab === "users"
               ? "border-b-2 border-blue-500 text-white"
               : "text-gray-400"
@@ -45,19 +52,30 @@ function AdminPage() {
           Użytkownicy
         </button>
         <button
-          onClick={() => setActiveTab("award-types")}
-          className={`px-4 py-2 flex items-center gap-2 ${
-            activeTab === "award-types"
+          onClick={() => setActiveTab("awards")}
+          className={`px-4 py-2 flex items-center gap-2 whitespace-nowrap ${
+            activeTab === "awards"
               ? "border-b-2 border-blue-500 text-white"
               : "text-gray-400"
           }`}
         >
           <Award size={20} />
+          Nagrody
+        </button>
+        <button
+          onClick={() => setActiveTab("award-types")}
+          className={`px-4 py-2 flex items-center gap-2 whitespace-nowrap ${
+            activeTab === "award-types"
+              ? "border-b-2 border-blue-500 text-white"
+              : "text-gray-400"
+          }`}
+        >
+          <AwardIcon size={20} />
           Typy Nagród
         </button>
         <button
           onClick={() => setActiveTab("stats")}
-          className={`px-4 py-2 flex items-center gap-2 ${
+          className={`px-4 py-2 flex items-center gap-2 whitespace-nowrap ${
             activeTab === "stats"
               ? "border-b-2 border-blue-500 text-white"
               : "text-gray-400"
@@ -72,6 +90,7 @@ function AdminPage() {
       <div>
         {activeTab === "clips" && <ClipsManager />}
         {activeTab === "users" && <UsersManager />}
+        {activeTab === "awards" && <AwardsManager />}
         {activeTab === "award-types" && <AwardTypesManager />}
         {activeTab === "stats" && <StatsPanel />}
       </div>

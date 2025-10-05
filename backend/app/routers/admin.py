@@ -5,20 +5,23 @@ import logging
 from datetime import datetime
 from pathlib import Path
 from typing import List
+from typing import Optional
 
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.core.exceptions import NotFoundError, DuplicateError, AuthorizationError, DatabaseError, ValidationError, \
     StorageError
+from app.models.award import Award
 from app.models.award_type import AwardType
-from app.models.user import User
 from app.models.clip import Clip
+from app.models.user import User
 from fastapi import APIRouter, Depends, status, File, UploadFile, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
-from sqlalchemy.orm import Session
+from sqlalchemy import desc, asc
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session, joinedload
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -510,3 +513,197 @@ async def delete_award_type(
         "name": award_type.name
     }
 
+
+class AwardUpdate(BaseModel):
+    """Schema do aktualizacji nagrody"""
+    award_name: Optional[str] = None
+    clip_id: Optional[int] = None
+
+
+@router.get("/awards")
+async def get_all_awards(
+        page: int = 1,
+        limit: int = 20,
+        sort_by: str = "awarded_at",
+        sort_order: str = "desc",
+        user_id: Optional[int] = None,
+        clip_id: Optional[int] = None,
+        award_name: Optional[str] = None,
+        db: Session = Depends(get_db),
+        admin_user: User = Depends(require_admin)
+):
+    """
+    Lista wszystkich nagród z filtrami (admin only)
+    GET /api/admin/awards?page=1&limit=20&sort_by=awarded_at&sort_order=desc
+    """
+    if page < 1:
+        page = 1
+    if limit < 1 or limit > 100:
+        limit = 20
+
+    offset = (page - 1) * limit
+
+    # Bazowe query z joinami
+    query = db.query(Award).options(
+        joinedload(Award.clip).joinedload(Clip.uploader),
+        joinedload(Award.user)
+    ).join(
+        Clip, Award.clip_id == Clip.id
+    ).filter(
+        Clip.is_deleted == False
+    )
+
+    # Filtry
+    if user_id:
+        query = query.filter(Award.user_id == user_id)
+    if clip_id:
+        query = query.filter(Award.clip_id == clip_id)
+    if award_name:
+        query = query.filter(Award.award_name == award_name)
+
+    # Sortowanie
+    sort_fields = {
+        "awarded_at": Award.awarded_at,
+        "clip_id": Award.clip_id,
+        "user_id": Award.user_id,
+        "award_name": Award.award_name
+    }
+
+    if sort_by not in sort_fields:
+        sort_by = "awarded_at"
+
+    sort_field = sort_fields[sort_by]
+
+    if sort_order.lower() == "asc":
+        query = query.order_by(asc(sort_field))
+    else:
+        query = query.order_by(desc(sort_field))
+
+    # Total
+    total = query.count()
+
+    # Pobierz z paginacją
+    awards = query.offset(offset).limit(limit).all()
+
+    # Response
+    awards_data = []
+    for award in awards:
+        # Pobierz AwardType
+        award_type = db.query(AwardType).filter(
+            AwardType.name == award.award_name
+        ).first()
+
+        awards_data.append({
+            "id": award.id,
+            "award_name": award.award_name,
+            "award_display_name": award_type.display_name if award_type else award.award_name,
+            "award_icon": award_type.icon if award_type else "🏆",
+            "awarded_at": award.awarded_at.isoformat(),
+            "user": {
+                "id": award.user_id,
+                "username": award.user.username
+            },
+            "clip": {
+                "id": award.clip.id,
+                "filename": award.clip.filename,
+                "clip_type": award.clip.clip_type.value,
+                "uploader_username": award.clip.uploader.username
+            }
+        })
+
+    pages = (total + limit - 1) // limit
+
+    return {
+        "awards": awards_data,
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "pages": pages
+    }
+
+
+@router.patch("/awards/{award_id}")
+async def update_award(
+        award_id: int,
+        award_data: AwardUpdate,
+        db: Session = Depends(get_db),
+        admin_user: User = Depends(require_admin)
+):
+    """
+    Aktualizuj nagrodę (admin only)
+    PATCH /api/admin/awards/{award_id}
+    """
+    award = db.query(Award).filter(Award.id == award_id).first()
+
+    if not award:
+        raise NotFoundError(resource="Nagroda", resource_id=award_id)
+
+    # Aktualizuj pola
+    if award_data.award_name is not None:
+        # Sprawdź czy AwardType istnieje
+        award_type = db.query(AwardType).filter(
+            AwardType.name == award_data.award_name
+        ).first()
+        if not award_type:
+            raise ValidationError(
+                message=f"Nieznany typ nagrody: {award_data.award_name}",
+                field="award_name"
+            )
+        award.award_name = award_data.award_name
+
+    if award_data.clip_id is not None:
+        # Sprawdź czy klip istnieje
+        clip = db.query(Clip).filter(
+            Clip.id == award_data.clip_id,
+            Clip.is_deleted == False
+        ).first()
+        if not clip:
+            raise NotFoundError(resource="Klip", resource_id=award_data.clip_id)
+        award.clip_id = award_data.clip_id
+
+    try:
+        db.commit()
+        db.refresh(award)
+        logger.info(f"Admin {admin_user.username} updated award {award_id}")
+    except SQLAlchemyError as e:
+        db.rollback()
+        logger.error(f"Failed to update award: {e}")
+        raise DatabaseError(message="Nie można zaktualizować nagrody")
+
+    return {
+        "id": award.id,
+        "award_name": award.award_name,
+        "clip_id": award.clip_id,
+        "user_id": award.user_id,
+        "awarded_at": award.awarded_at.isoformat()
+    }
+
+
+@router.delete("/awards/{award_id}")
+async def delete_award(
+        award_id: int,
+        db: Session = Depends(get_db),
+        admin_user: User = Depends(require_admin)
+):
+    """
+    Usuń nagrodę (admin only)
+    DELETE /api/admin/awards/{award_id}
+    """
+    award = db.query(Award).filter(Award.id == award_id).first()
+
+    if not award:
+        raise NotFoundError(resource="Nagroda", resource_id=award_id)
+
+    try:
+        db.delete(award)
+        db.commit()
+        logger.info(f"Admin {admin_user.username} deleted award {award_id}")
+    except SQLAlchemyError as e:
+        db.rollback()
+        logger.error(f"Failed to delete award: {e}")
+        raise DatabaseError(message="Nie można usunąć nagrody")
+
+    return {
+        "message": "Nagroda została usunięta",
+        "award_id": award_id
+    }
