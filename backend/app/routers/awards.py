@@ -415,11 +415,24 @@ async def get_award_stats(
     ).first()
 
     # Pobierz AwardType dla najpopularniejszej nagrody
-    most_popular_type = None
+    most_popular_data = {
+        "award_name": None,
+        "count": 0,
+        "display_name": None,
+        "icon": None
+    }
+
     if most_popular:
         most_popular_type = db.query(AwardType).filter(
             AwardType.name == most_popular[0]
         ).first()
+
+        most_popular_data = {
+            "award_name": most_popular[0],
+            "count": most_popular[1],
+            "display_name": most_popular_type.display_name if most_popular_type else most_popular[0],
+            "icon": most_popular_type.icon if most_popular_type else "🏆"
+        }
 
     # Najbardziej aktywni użytkownicy (top 5)
     most_active_users = db.query(
@@ -465,12 +478,7 @@ async def get_award_stats(
 
     return {
         "total_awards": total_awards,
-        "most_popular_award": {
-            "award_name": most_popular[0] if most_popular else None,
-            "count": most_popular[1] if most_popular else 0,
-            "display_name": most_popular_type.display_name if most_popular_type else None,
-            "icon": most_popular_type.icon if most_popular_type else None
-        },
+        "most_popular_award": most_popular_data,
         "most_active_users": [
             {
                 "user_id": user.id,
