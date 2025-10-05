@@ -13,6 +13,7 @@ function ProfilePage() {
         password: "",
         confirmPassword: "",
     });
+    const [emptyPassword, setEmptyPassword] = useState(false);
 
     useEffect(() => {
         if (user) {
@@ -22,14 +23,15 @@ function ProfilePage() {
                 password: "",
                 confirmPassword: "",
             });
+            setEmptyPassword(false);
         }
     }, [user]);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
 
-        // Walidacja hasła
-        if (formData.password && formData.password !== formData.confirmPassword) {
+        // Walidacja hasła (tylko zgodność, gdy ustawiane)
+        if (!emptyPassword && formData.password && formData.password !== formData.confirmPassword) {
             toast.error("Hasła nie są identyczne");
             return;
         }
@@ -42,7 +44,10 @@ function ProfilePage() {
                 email: formData.email || null,
             };
 
-            if (formData.password) {
+            if (emptyPassword) {
+                // jawnie ustaw puste hasło
+                updateData.password = "";
+            } else if (formData.password) {
                 updateData.password = formData.password;
             }
 
@@ -54,12 +59,13 @@ function ProfilePage() {
 
             toast.success("Profil zaktualizowany");
 
-            // Wyczyść hasła
+            // Wyczyść hasła i flagę
             setFormData({
                 ...formData,
                 password: "",
                 confirmPassword: "",
             });
+            setEmptyPassword(false);
         } catch (err) {
             console.error("Failed to update profile:", err);
             toast.error(err.response?.data?.message || "Nie udało się zaktualizować profilu");
@@ -69,9 +75,14 @@ function ProfilePage() {
     };
 
     const handleChange = (e) => {
+        const { name, value } = e.target;
+        if (name === "password") {
+            // Każde ręczne wpisanie hasła anuluje tryb pustego hasła
+            if (value !== "") setEmptyPassword(false);
+        }
         setFormData({
             ...formData,
-            [e.target.name]: e.target.value,
+            [name]: value,
         });
     };
 
@@ -148,11 +159,22 @@ function ProfilePage() {
                             onChange={handleChange}
                             className="input-field w-full"
                             placeholder="Zostaw puste aby nie zmieniać"
-                            minLength={8}
                         />
-                        <p className="text-xs text-gray-500 mt-1">
-                            Min. 8 znaków, wielka litera, mała litera, cyfra
-                        </p>
+                        <div className="flex items-center gap-2 mt-2">
+                            <button
+                                type="button"
+                                className="text-xs text-red-400 underline hover:text-red-300"
+                                onClick={() => {
+                                    setFormData({ ...formData, password: "", confirmPassword: "" });
+                                    setEmptyPassword(true);
+                                }}
+                            >
+                                Ustaw puste hasło (niezalecane)
+                            </button>
+                            {emptyPassword && (
+                                <span className="text-xs text-yellow-400 ml-2">Hasło będzie puste! To bardzo niezalecane.</span>
+                            )}
+                        </div>
                     </div>
 
                     {/* Confirm Password */}

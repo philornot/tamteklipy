@@ -7,6 +7,7 @@ from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.core.exceptions import AuthenticationError, NotFoundError
 from app.core.exceptions import DuplicateError
+from app.core.exceptions import DatabaseError
 from app.core.security import hash_password
 from app.core.security import (
     verify_password,
@@ -61,10 +62,17 @@ async def login(
         )
 
     # Zweryfikuj hasło
-    if not verify_password(form_data.password, user.hashed_password):
-        raise AuthenticationError(
-            message="Nieprawidłowa nazwa użytkownika lub hasło"
-        )
+    if not user.hashed_password:
+        # Pozwól na logowanie tylko jeśli hasło podane przez użytkownika też jest puste (po przycięciu spacji)
+        if (form_data.password or "").strip() != "":
+            raise AuthenticationError(
+                message="Nieprawidłowa nazwa użytkownika lub hasło"
+            )
+    else:
+        if not verify_password(form_data.password, user.hashed_password):
+            raise AuthenticationError(
+                message="Nieprawidłowa nazwa użytkownika lub hasło"
+            )
 
     # Utwórz JWT token ze scope użytkownika
     access_token = create_access_token(
@@ -133,7 +141,7 @@ async def register(
         new_user = User(
             username=user_data.username.lower(),
             email=user_data.email,
-            hashed_password=hash_password(user_data.password) if user_data.password else None,
+            hashed_password=hash_password(user_data.password or ""),
             full_name=user_data.full_name,
             is_active=user_data.is_active,
             award_scopes=user_data.award_scopes or []
@@ -222,8 +230,12 @@ async def update_profile(
     if user_update.email is not None:
         current_user.email = user_update.email
 
-    if user_update.password:
-        current_user.hashed_password = hash_password(user_update.password)
+    if user_update.password is not None:
+        if user_update.password == "":
+            # Ustawienie pustego hasła: zapisz hash pustego ciągu (bez migracji kolumny)
+            current_user.hashed_password = hash_password("")
+        else:
+            current_user.hashed_password = hash_password(user_update.password)
 
     try:
         db.commit()
