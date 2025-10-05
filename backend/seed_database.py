@@ -385,9 +385,9 @@ def main(clear_first=False):
             clear_database(db)
 
         users = seed_users(db)
-        seed_custom_awards(db, users)
-        clips = seed_clips(db, users)
-        seed_awards(db, users, clips)
+        # seed_custom_awards(db, users)
+        # clips = seed_clips(db, users)
+        # seed_awards(db, users, clips)
 
         print_summary(db)
 
