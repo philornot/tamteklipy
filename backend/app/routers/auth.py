@@ -1,6 +1,8 @@
 """
 Router dla autoryzacji — logowanie, rejestracja, tokeny JWT
 """
+import logging
+
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.core.exceptions import AuthenticationError, NotFoundError
@@ -14,12 +16,15 @@ from app.models.user import User
 from app.schemas.token import Token
 from app.schemas.user import UserCreate
 from app.schemas.user import UserResponse, UserWithToken
+from app.schemas.user import UserUpdate
 from fastapi import APIRouter, Depends
 from fastapi import status
 from fastapi.security import OAuth2PasswordRequestForm
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.post("/login", response_model=Token)
@@ -155,5 +160,61 @@ async def read_me(current_user: User = Depends(get_current_user)):
     logger = logging.getLogger(__name__)
     logger.info(f"User {current_user.username}: is_admin={current_user.is_admin}")
     logger.info(f"Full user object: {current_user}")
+
+    return current_user
+
+
+@router.patch("/me", response_model=UserResponse)
+async def update_profile(
+        user_update: UserUpdate,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user)
+):
+    """
+    Aktualizacja profilu użytkownika
+
+    PATCH /api/auth/me
+    Body:
+    {
+      "full_name": "Nowa nazwa",
+      "email": "nowy@email.pl",
+      "password": "NoweHaslo123!" (opcjonalne)
+    }
+    """
+    from app.core.exceptions import DuplicateError
+    from app.core.security import hash_password
+
+    # Sprawdź duplikat email
+    if user_update.email and user_update.email != current_user.email:
+        existing_email = db.query(User).filter(
+            User.email == user_update.email,
+            User.id != current_user.id
+        ).first()
+
+        if existing_email:
+            raise DuplicateError(
+                resource="Email",
+                field="email",
+                value=user_update.email
+            )
+
+    # Update pól
+    if user_update.full_name is not None:
+        current_user.full_name = user_update.full_name
+
+    if user_update.email is not None:
+        current_user.email = user_update.email
+
+    if user_update.password:
+        current_user.hashed_password = hash_password(user_update.password)
+
+    try:
+        db.commit()
+        db.refresh(current_user)
+        logger.info(f"User {current_user.username} updated profile")
+    except SQLAlchemyError as e:
+        db.rollback()
+        logger.error(f"Failed to update user: {e}")
+        raise DatabaseError(message="Nie można zaktualizować profilu")
 
     return current_user

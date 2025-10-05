@@ -1,5 +1,5 @@
 import { Link, useNavigate } from "react-router-dom";
-import { Award, Home, LogOut, Upload, Settings } from "lucide-react";
+import { Award, Home, LogOut, Settings, Upload } from "lucide-react";
 
 function Header({ user, onLogout }) {
   const navigate = useNavigate();
@@ -61,7 +61,13 @@ function Header({ user, onLogout }) {
 
               {/* User info */}
               <div className="flex items-center gap-4 ml-4 pl-4 border-l border-gray-700">
-                <span className="text-gray-400">{user.username}</span>
+                <Link
+                  to="/profile"
+                  className="text-gray-400 hover:text-white"
+                  title="Profil"
+                >
+                  {user.username}
+                </Link>
 
                 <button
                   onClick={handleLogout}
