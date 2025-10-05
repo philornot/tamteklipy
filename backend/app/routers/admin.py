@@ -78,9 +78,7 @@ async def get_award_types_detailed(
 
     Zwraca pełne info z icon_type, icon_url, uprawnieniami
     """
-    award_types = db.query(AwardType).options(
-        joinedload(AwardType.creator) if hasattr(AwardType, 'creator') else None
-    ).all()
+    award_types = db.query(AwardType).all()
 
     result = []
     for at in award_types:
@@ -127,6 +125,107 @@ async def get_award_types_detailed(
         })
 
     return result
+
+
+class AwardTypeUpdate(BaseModel):
+    """Schema do aktualizacji typu nagrody"""
+    display_name: Optional[str] = Field(None, min_length=1, max_length=100)
+    description: Optional[str] = Field(None, max_length=500)
+    icon: Optional[str] = Field(None, max_length=50)
+    lucide_icon: Optional[str] = Field(None, max_length=100)
+    color: Optional[str] = Field(None, pattern="^#[0-9A-Fa-f]{6}$")
+    is_personal: Optional[bool] = None
+
+
+@router.patch("/award-types/{award_type_id}")
+async def update_award_type(
+        award_type_id: int,
+        update_data: AwardTypeUpdate,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user)
+):
+    """
+    Aktualizuj typ nagrody
+    PATCH /api/admin/award-types/{award_type_id}
+
+    Uprawnienia:
+    - Admin może edytować wszystkie
+    - Twórca może edytować tylko swoje (nie-systemowe, nie-personal)
+    """
+    award_type = db.query(AwardType).filter(AwardType.id == award_type_id).first()
+
+    if not award_type:
+        raise NotFoundError(resource="AwardType", resource_id=award_type_id)
+
+    # Sprawdź uprawnienia
+    can_edit = current_user.is_admin or (
+            award_type.created_by_user_id == current_user.id
+            and not award_type.is_system_award
+    )
+
+    if not can_edit:
+        raise AuthorizationError(
+            message="Nie masz uprawnień do edycji tego typu nagrody"
+        )
+
+    # Aktualizuj pola
+    if update_data.display_name is not None:
+        award_type.display_name = update_data.display_name
+
+    if update_data.description is not None:
+        award_type.description = update_data.description
+
+    if update_data.icon is not None:
+        award_type.icon = update_data.icon
+
+    if update_data.color is not None:
+        award_type.color = update_data.color
+
+    # Lucide icon - jeśli ustawiamy na pusty string, wyczyść
+    if update_data.lucide_icon is not None:
+        if update_data.lucide_icon == "":
+            award_type.lucide_icon = None
+            # Nie usuwaj custom_icon_path - może być zachowany
+        else:
+            award_type.lucide_icon = update_data.lucide_icon
+            # Przy ustawieniu lucide, NIE usuwamy custom_icon_path
+            # Frontend powinien decydować który używać
+
+    # is_personal - tylko admin może zmieniać
+    if update_data.is_personal is not None and current_user.is_admin:
+        # Nie pozwól na zmianę is_personal dla systemowych nagród
+        if not award_type.is_system_award:
+            award_type.is_personal = update_data.is_personal
+
+    try:
+        db.commit()
+        db.refresh(award_type)
+        logger.info(
+            f"AwardType {award_type_id} updated by {current_user.username}: "
+            f"{update_data.model_dump(exclude_none=True)}"
+        )
+    except SQLAlchemyError as e:
+        db.rollback()
+        logger.error(f"Failed to update AwardType: {e}")
+        raise DatabaseError(message="Nie można zaktualizować typu nagrody")
+
+    return {
+        "id": award_type.id,
+        "name": award_type.name,
+        "display_name": award_type.display_name,
+        "description": award_type.description,
+        "icon": award_type.icon,
+        "lucide_icon": award_type.lucide_icon,
+        "color": award_type.color,
+        "icon_type": "custom" if award_type.custom_icon_path else (
+            "lucide" if award_type.lucide_icon else "emoji"
+        ),
+        "icon_url": f"/api/admin/award-types/{award_type.id}/icon" if award_type.custom_icon_path else None,
+        "is_system_award": award_type.is_system_award,
+        "is_personal": award_type.is_personal,
+        "updated_at": award_type.updated_at.isoformat()
+    }
+
 
 @router.post("/award-types", response_model=AwardTypeResponse, status_code=status.HTTP_201_CREATED)
 async def create_award_type(
@@ -261,7 +360,7 @@ async def upload_award_icon(
 
     # Zaktualizuj w bazie
     award_type.custom_icon_path = str(file_path)
-    award_type.lucide_icon = None  # Wyczyść lucide icon jeśli była
+    award_type.lucide_icon = None  # Wyczyść lucide icon przy uploadzie custom
 
     try:
         db.commit()
@@ -522,35 +621,63 @@ async def activate_user(
     }
 
 
+@router.delete("/award-types/{award_type_id}/force")
 @router.delete("/award-types/{award_type_id}")
 async def delete_award_type(
         award_type_id: int,
         db: Session = Depends(get_db),
-        admin_user: User = Depends(require_admin)
+        current_user: User = Depends(get_current_user)
 ):
     """
-    Usuwa typ nagrody - tylko dla adminów
+    Usuwa typ nagrody
 
     DELETE /api/admin/award-types/{award_type_id}
+    DELETE /api/admin/award-types/{award_type_id}/force
+
+    Uprawnienia:
+    - Admin może usuwać wszystkie (poza system/personal)
+    - Twórca może usuwać tylko swoje (poza personal)
     """
     award_type = db.query(AwardType).filter(AwardType.id == award_type_id).first()
 
     if not award_type:
         raise NotFoundError(resource="Typ nagrody", resource_id=award_type_id)
 
+    # Blokada systemowych i personal
+    if award_type.is_system_award:
+        raise ValidationError(
+            message="Nie można usunąć systemowej nagrody",
+            field="is_system_award"
+        )
+
+    if award_type.is_personal:
+        raise ValidationError(
+            message="Nie można usunąć imiennej nagrody",
+            field="is_personal"
+        )
+
+    # Sprawdź uprawnienia
+    can_delete = current_user.is_admin or award_type.created_by_user_id == current_user.id
+
+    if not can_delete:
+        raise AuthorizationError(
+            message="Nie masz uprawnień do usunięcia tego typu nagrody"
+        )
+
     # Sprawdź czy typ jest używany
     from app.models.award import Award
     awards_count = db.query(Award).filter(Award.award_name == award_type.name).count()
 
     if awards_count > 0:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Nie można usunąć - typ nagrody jest używany w {awards_count} nagrodach"
+        raise ValidationError(
+            message=f"Nie można usunąć - typ nagrody jest używany w {awards_count} nagrodach",
+            field="usage_count",
+            details={"count": awards_count}
         )
 
     # Usuń plik ikony jeśli istnieje
-    if award_type.icon_path:
-        icon_path = Path(award_type.icon_path)
+    if award_type.custom_icon_path:
+        icon_path = Path(award_type.custom_icon_path)
         if icon_path.exists():
             try:
                 icon_path.unlink()
@@ -564,9 +691,9 @@ async def delete_award_type(
     except SQLAlchemyError as e:
         db.rollback()
         logger.error(f"Failed to delete award type {award_type_id}: {e}")
-        raise HTTPException(status_code=500, detail="Nie udało się usunąć typu nagrody")
+        raise DatabaseError(message="Nie można usunąć typu nagrody")
 
-    logger.info(f"Admin {admin_user.username} deleted award type {award_type_id} ({award_type.name})")
+    logger.info(f"User {current_user.username} deleted award type {award_type_id} ({award_type.name})")
 
     return {
         "message": "Typ nagrody został usunięty",
