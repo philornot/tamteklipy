@@ -17,12 +17,32 @@ function EditAwardTypeModal({ awardType, onClose, onSuccess }) {
   const [loading, setLoading] = useState(false);
   const [showLucideSelector, setShowLucideSelector] = useState(false);
   const [uploadingIcon, setUploadingIcon] = useState(false);
+  const [iconMode, setIconMode] = useState(
+    awardType.icon_type === "custom" ? "custom" :
+    awardType.icon_type === "lucide" ? "lucide" : "emoji"
+  );
 
   const handleSave = async () => {
     setLoading(true);
 
     try {
-      await api.patch(`/admin/award-types/${awardType.id}`, formData);
+      // Przygotuj dane do wysłania
+      const updateData = {
+        display_name: formData.display_name,
+        description: formData.description,
+        icon: formData.icon,
+        color: formData.color,
+        is_personal: formData.is_personal,
+      };
+
+      // Dodaj lucide_icon tylko jeśli iconMode === "lucide"
+      if (iconMode === "lucide") {
+        updateData.lucide_icon = formData.lucide_icon;
+      } else if (iconMode === "emoji") {
+        updateData.lucide_icon = ""; // Wyczyść lucide icon
+      }
+
+      await api.patch(`/admin/award-types/${awardType.id}`, updateData);
       toast.success("Typ nagrody zaktualizowany");
       onSuccess();
       onClose();
@@ -48,6 +68,7 @@ function EditAwardTypeModal({ awardType, onClose, onSuccess }) {
       });
 
       toast.success("Ikona uploaded");
+      setIconMode("custom");
       onSuccess();
     } catch (err) {
       toast.error(
@@ -56,6 +77,11 @@ function EditAwardTypeModal({ awardType, onClose, onSuccess }) {
     } finally {
       setUploadingIcon(false);
     }
+  };
+
+  const handleClearIcon = () => {
+    setIconMode("emoji");
+    setFormData({ ...formData, lucide_icon: "" });
   };
 
   const renderCurrentIcon = () => {
@@ -80,6 +106,31 @@ function EditAwardTypeModal({ awardType, onClose, onSuccess }) {
       );
     } else {
       return <span className="text-4xl">{awardType.icon}</span>;
+    }
+  };
+
+  const renderIconPreview = () => {
+    if (iconMode === "custom" && awardType.icon_type === "custom") {
+      return (
+        <img
+          src={`${import.meta.env.VITE_API_URL}${awardType.icon_url}`}
+          alt="Custom icon"
+          className="w-16 h-16 rounded"
+        />
+      );
+    } else if (iconMode === "lucide" && formData.lucide_icon) {
+      const componentName = formData.lucide_icon
+        .split("-")
+        .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+        .join("");
+      const IconComponent = LucideIcons[componentName];
+      return IconComponent ? (
+        <IconComponent size={64} />
+      ) : (
+        <span className="text-4xl">🏆</span>
+      );
+    } else {
+      return <span className="text-4xl">{formData.icon}</span>;
     }
   };
 
@@ -136,22 +187,6 @@ function EditAwardTypeModal({ awardType, onClose, onSuccess }) {
           />
         </div>
 
-        {/* Emoji Fallback */}
-        <div className="mb-4">
-          <label className="block text-gray-300 mb-2">Emoji fallback</label>
-          <input
-            type="text"
-            value={formData.icon}
-            onChange={(e) => setFormData({ ...formData, icon: e.target.value })}
-            className="w-full bg-gray-700 border border-gray-600 text-white px-4 py-2 rounded-lg"
-            maxLength={10}
-            placeholder="🏆"
-          />
-          <p className="text-xs text-gray-500 mt-1">
-            Używane gdy brak Lucide/Custom
-          </p>
-        </div>
-
         {/* Color */}
         <div className="mb-4">
           <label className="block text-gray-300 mb-2">Kolor</label>
@@ -176,49 +211,110 @@ function EditAwardTypeModal({ awardType, onClose, onSuccess }) {
           </div>
         </div>
 
-        {/* Icon Options */}
-        <div className="mb-4 space-y-2">
-          <label className="block text-gray-300 mb-2">Ikona</label>
+        {/* Icon Mode Selector */}
+        <div className="mb-4">
+          <label className="block text-gray-300 mb-2">Typ ikony</label>
+          <div className="flex gap-2 mb-3">
+            <button
+              type="button"
+              onClick={() => setIconMode("emoji")}
+              className={`flex-1 px-4 py-2 rounded-lg transition ${
+                iconMode === "emoji"
+                  ? "bg-blue-600 text-white"
+                  : "bg-gray-700 hover:bg-gray-600"
+              }`}
+            >
+              Emoji
+            </button>
+            <button
+              type="button"
+              onClick={() => setIconMode("lucide")}
+              className={`flex-1 px-4 py-2 rounded-lg transition ${
+                iconMode === "lucide"
+                  ? "bg-blue-600 text-white"
+                  : "bg-gray-700 hover:bg-gray-600"
+              }`}
+            >
+              Lucide
+            </button>
+            <button
+              type="button"
+              onClick={() => setIconMode("custom")}
+              className={`flex-1 px-4 py-2 rounded-lg transition ${
+                iconMode === "custom"
+                  ? "bg-blue-600 text-white"
+                  : "bg-gray-700 hover:bg-gray-600"
+              }`}
+            >
+              Custom
+            </button>
+          </div>
 
-          {/* Lucide */}
-          <button
-            type="button"
-            onClick={() => setShowLucideSelector(true)}
-            className="w-full px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition flex items-center justify-center gap-2"
-          >
-            <Sparkles size={20} />
-            Wybierz Lucide Icon
-          </button>
+          {/* Icon Preview */}
+          <div className="p-4 bg-gray-900 rounded border border-gray-700 text-center mb-3">
+            <p className="text-xs text-gray-400 mb-2">Podgląd:</p>
+            <div className="flex justify-center">{renderIconPreview()}</div>
+          </div>
 
-          {formData.lucide_icon && (
-            <div className="text-sm text-gray-400 text-center">
-              Wybrano: <strong>{formData.lucide_icon}</strong>
+          {/* Emoji Input */}
+          {iconMode === "emoji" && (
+            <div>
+              <label className="block text-gray-300 mb-2">Emoji fallback</label>
+              <input
+                type="text"
+                value={formData.icon}
+                onChange={(e) => setFormData({ ...formData, icon: e.target.value })}
+                className="w-full bg-gray-700 border border-gray-600 text-white px-4 py-2 rounded-lg"
+                maxLength={10}
+                placeholder="🏆"
+              />
+            </div>
+          )}
+
+          {/* Lucide Selector */}
+          {iconMode === "lucide" && (
+            <div>
+              <button
+                type="button"
+                onClick={() => setShowLucideSelector(true)}
+                className="w-full px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition flex items-center justify-center gap-2"
+              >
+                <Sparkles size={20} />
+                Wybierz Lucide Icon
+              </button>
+              {formData.lucide_icon && (
+                <div className="text-sm text-gray-400 text-center mt-2">
+                  Wybrano: <strong>{formData.lucide_icon}</strong>
+                </div>
+              )}
             </div>
           )}
 
           {/* Custom Upload */}
-          <label className="block">
-            <input
-              type="file"
-              accept="image/png,image/jpeg"
-              onChange={handleIconUpload}
-              className="hidden"
-              id={`icon-upload-${awardType.id}`}
-            />
-            <div className="w-full px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition flex items-center justify-center gap-2 cursor-pointer">
-              {uploadingIcon ? (
-                <>
-                  <Loader className="animate-spin" size={20} />
-                  Uploading...
-                </>
-              ) : (
-                <>
-                  <Upload size={20} />
-                  Upload Custom Icon
-                </>
-              )}
-            </div>
-          </label>
+          {iconMode === "custom" && (
+            <label className="block">
+              <input
+                type="file"
+                accept="image/png,image/jpeg"
+                onChange={handleIconUpload}
+                className="hidden"
+                id={`icon-upload-${awardType.id}`}
+              />
+              <div className="w-full px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition flex items-center justify-center gap-2 cursor-pointer">
+                {uploadingIcon ? (
+                  <>
+                    <Loader className="animate-spin" size={20} />
+                    Uploading...
+                  </>
+                ) : (
+                  <>
+                    <Upload size={20} />
+                    Upload Custom Icon
+                  </>
+                )}
+              </div>
+            </label>
+          )}
         </div>
 
         {/* Personal Flag */}

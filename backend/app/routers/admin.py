@@ -67,6 +67,67 @@ async def get_award_types(
     return award_types
 
 
+@router.get("/award-types/detailed")
+async def get_award_types_detailed(
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user)
+):
+    """
+    Pobierz szczegółowe informacje o wszystkich typach nagród
+    GET /api/admin/award-types/detailed
+
+    Zwraca pełne info z icon_type, icon_url, uprawnieniami
+    """
+    award_types = db.query(AwardType).options(
+        joinedload(AwardType.creator) if hasattr(AwardType, 'creator') else None
+    ).all()
+
+    result = []
+    for at in award_types:
+        # Określ typ ikony
+        if at.custom_icon_path:
+            icon_type = "custom"
+            icon_url = f"/api/admin/award-types/{at.id}/icon"
+        elif at.lucide_icon:
+            icon_type = "lucide"
+            icon_url = None
+        else:
+            icon_type = "emoji"
+            icon_url = None
+
+        # Pobierz username creatora jeśli istnieje
+        created_by_username = None
+        if at.created_by_user_id:
+            creator = db.query(User).filter(User.id == at.created_by_user_id).first()
+            if creator:
+                created_by_username = creator.username
+
+        # Sprawdź czy current_user może edytować/usuwać
+        can_edit = current_user.is_admin or at.created_by_user_id == current_user.id
+        can_delete = can_edit and not at.is_system_award and not at.is_personal
+
+        result.append({
+            "id": at.id,
+            "name": at.name,
+            "display_name": at.display_name,
+            "description": at.description,
+            "icon": at.icon,
+            "lucide_icon": at.lucide_icon,
+            "color": at.color,
+            "icon_type": icon_type,
+            "icon_url": icon_url,
+            "is_system_award": at.is_system_award,
+            "is_personal": at.is_personal,
+            "created_by_user_id": at.created_by_user_id,
+            "created_by_username": created_by_username,
+            "can_edit": can_edit,
+            "can_delete": can_delete,
+            "created_at": at.created_at.isoformat(),
+            "updated_at": at.updated_at.isoformat()
+        })
+
+    return result
+
 @router.post("/award-types", response_model=AwardTypeResponse, status_code=status.HTTP_201_CREATED)
 async def create_award_type(
         award_type_data: AwardTypeCreate,

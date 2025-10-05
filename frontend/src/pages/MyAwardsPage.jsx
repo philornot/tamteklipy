@@ -1,13 +1,16 @@
 import {useEffect, useState} from 'react'
-import {Award, Loader, Plus, Trash2} from 'lucide-react'
+import {Award, Loader, Plus, Trash2, Edit2} from 'lucide-react'
+import * as LucideIcons from 'lucide-react'
 import api from '../services/api'
 import toast from 'react-hot-toast'
 import CreateAwardModal from '../components/awards/CreateAwardModal'
+import EditMyAwardModal from '../components/awards/EditMyAwardModal'
 
 function MyAwardsPage() {
     const [customAwards, setCustomAwards] = useState([])
     const [loading, setLoading] = useState(true)
     const [showCreateModal, setShowCreateModal] = useState(false)
+    const [editingAward, setEditingAward] = useState(null)
 
     useEffect(() => {
         fetchCustomAwards()
@@ -25,8 +28,8 @@ function MyAwardsPage() {
         }
     }
 
-    const handleDelete = async (awardId) => {
-        if (!confirm('Czy na pewno chcesz usunąć tę nagrodę?')) return
+    const handleDelete = async (awardId, awardName) => {
+        if (!confirm(`Czy na pewno chcesz usunąć nagrodę "${awardName}"?`)) return
 
         try {
             await api.delete(`/my-awards/my-award-types/${awardId}`)
@@ -34,6 +37,37 @@ function MyAwardsPage() {
             fetchCustomAwards()
         } catch (err) {
             toast.error(err.response?.data?.message || 'Nie udało się usunąć nagrody')
+        }
+    }
+
+    const renderIcon = (award) => {
+        if (award.icon_url) {
+            return (
+                <img
+                    src={`${import.meta.env.VITE_API_URL}${award.icon_url}`}
+                    alt={award.display_name}
+                    className="w-16 h-16 rounded"
+                />
+            )
+        } else if (award.lucide_icon) {
+            const componentName = award.lucide_icon
+                .split('-')
+                .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+                .join('')
+            const IconComponent = LucideIcons[componentName]
+            return IconComponent ? (
+                <IconComponent size={64}/>
+            ) : (
+                <div className="w-16 h-16 rounded bg-gray-700 flex items-center justify-center text-3xl">
+                    {award.icon}
+                </div>
+            )
+        } else {
+            return (
+                <div className="w-16 h-16 rounded bg-gray-700 flex items-center justify-center text-3xl">
+                    {award.icon}
+                </div>
+            )
         }
     }
 
@@ -85,23 +119,10 @@ function MyAwardsPage() {
                             className="bg-gray-800 rounded-lg p-4 border border-gray-700"
                         >
                             <div className="flex items-start gap-4">
-                                {/* Icon */}
                                 <div className="flex-shrink-0">
-                                    {award.icon_url ? (
-                                        <img
-                                            src={`${import.meta.env.VITE_API_URL}${award.icon_url}`}
-                                            alt={award.display_name}
-                                            className="w-16 h-16 rounded"
-                                        />
-                                    ) : (
-                                        <div
-                                            className="w-16 h-16 rounded bg-gray-700 flex items-center justify-center text-3xl">
-                                            {award.icon}
-                                        </div>
-                                    )}
+                                    {renderIcon(award)}
                                 </div>
 
-                                {/* Info */}
                                 <div className="flex-1 min-w-0">
                                     <h3 className="font-semibold text-lg mb-1">{award.display_name}</h3>
                                     <p className="text-sm text-gray-400 mb-2">{award.description}</p>
@@ -114,14 +135,22 @@ function MyAwardsPage() {
                                     </div>
                                 </div>
 
-                                {/* Delete */}
-                                <button
-                                    onClick={() => handleDelete(award.id)}
-                                    className="p-2 text-red-400 hover:text-red-300 hover:bg-gray-700 rounded transition"
-                                    title="Usuń nagrodę"
-                                >
-                                    <Trash2 size={20}/>
-                                </button>
+                                <div className="flex flex-col gap-2">
+                                    <button
+                                        onClick={() => setEditingAward(award)}
+                                        className="p-2 text-blue-400 hover:text-blue-300 hover:bg-gray-700 rounded transition"
+                                        title="Edytuj nagrodę"
+                                    >
+                                        <Edit2 size={20}/>
+                                    </button>
+                                    <button
+                                        onClick={() => handleDelete(award.id, award.display_name)}
+                                        className="p-2 text-red-400 hover:text-red-300 hover:bg-gray-700 rounded transition"
+                                        title="Usuń nagrodę"
+                                    >
+                                        <Trash2 size={20}/>
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     ))}
@@ -132,6 +161,17 @@ function MyAwardsPage() {
                 <CreateAwardModal
                     onClose={() => setShowCreateModal(false)}
                     onSuccess={fetchCustomAwards}
+                />
+            )}
+
+            {editingAward && (
+                <EditMyAwardModal
+                    award={editingAward}
+                    onClose={() => setEditingAward(null)}
+                    onSuccess={() => {
+                        fetchCustomAwards()
+                        setEditingAward(null)
+                    }}
                 />
             )}
         </div>
