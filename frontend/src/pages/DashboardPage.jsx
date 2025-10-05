@@ -125,7 +125,7 @@ function DashboardPage() {
         onFilterChange={handleFilterChange}
       />
 
-      <ClipGrid clips={clips} />
+      <ClipGrid clips={clips} loading={loading} />
 
       {pagination.pages > 1 && (
         <Pagination
