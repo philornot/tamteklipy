@@ -895,3 +895,142 @@ async def delete_award(
         "message": "Nagroda została usunięta",
         "award_id": award_id
     }
+
+
+class UserUpdate(BaseModel):
+    """Schema do aktualizacji użytkownika"""
+    username: Optional[str] = Field(None, min_length=3, max_length=50)
+    email: Optional[str] = None
+    full_name: Optional[str] = None
+    is_active: Optional[bool] = None
+    is_admin: Optional[bool] = None
+
+
+@router.patch("/users/{user_id}")
+async def update_user(
+        user_id: int,
+        user_update: UserUpdate,
+        db: Session = Depends(get_db),
+        admin_user: User = Depends(require_admin)
+):
+    """
+    Aktualizuj użytkownika (admin only)
+    PATCH /api/admin/users/{user_id}
+    """
+    user = db.query(User).filter(User.id == user_id).first()
+
+    if not user:
+        raise NotFoundError(resource="Użytkownik", resource_id=user_id)
+
+    # Sprawdź duplikat username
+    if user_update.username and user_update.username != user.username:
+        existing = db.query(User).filter(
+            User.username == user_update.username.lower(),
+            User.id != user_id
+        ).first()
+
+        if existing:
+            raise DuplicateError(
+                resource="Użytkownik",
+                field="username",
+                value=user_update.username
+            )
+
+    # Sprawdź duplikat email
+    if user_update.email and user_update.email != user.email:
+        existing = db.query(User).filter(
+            User.email == user_update.email,
+            User.id != user_id
+        ).first()
+
+        if existing:
+            raise DuplicateError(
+                resource="Użytkownik",
+                field="email",
+                value=user_update.email
+            )
+
+    # Aktualizuj pola
+    if user_update.username:
+        user.username = user_update.username.lower()
+
+    if user_update.email is not None:
+        user.email = user_update.email
+
+    if user_update.full_name is not None:
+        user.full_name = user_update.full_name
+
+    if user_update.is_active is not None:
+        user.is_active = user_update.is_active
+
+    if user_update.is_admin is not None:
+        user.is_admin = user_update.is_admin
+
+    try:
+        db.commit()
+        db.refresh(user)
+        logger.info(f"Admin {admin_user.username} updated user {user_id} ({user.username})")
+    except SQLAlchemyError as e:
+        db.rollback()
+        logger.error(f"Failed to update user: {e}")
+        raise DatabaseError(message="Nie można zaktualizować użytkownika")
+
+    return {
+        "id": user.id,
+        "username": user.username,
+        "email": user.email,
+        "full_name": user.full_name,
+        "is_active": user.is_active,
+        "is_admin": user.is_admin
+    }
+
+
+@router.delete("/users/{user_id}")
+async def delete_user(
+        user_id: int,
+        db: Session = Depends(get_db),
+        admin_user: User = Depends(require_admin)
+):
+    """
+    Usuń użytkownika (admin only)
+    DELETE /api/admin/users/{user_id}
+
+    Blokuje usunięcie samego siebie
+    """
+    # BLOKADA - nie można usunąć samego siebie
+    if user_id == admin_user.id:
+        raise ValidationError(
+            message="Nie możesz usunąć własnego konta",
+            field="user_id"
+        )
+
+    user = db.query(User).filter(User.id == user_id).first()
+
+    if not user:
+        raise NotFoundError(resource="Użytkownik", resource_id=user_id)
+
+    # Sprawdź czy user ma jakieś dane
+    clips_count = db.query(Clip).filter(Clip.uploader_id == user_id).count()
+    awards_count = db.query(Award).filter(Award.user_id == user_id).count()
+
+    if clips_count > 0 or awards_count > 0:
+        raise ValidationError(
+            message=f"Nie można usunąć - użytkownik ma {clips_count} klipów i {awards_count} nagród",
+            field="user_data",
+            details={"clips": clips_count, "awards": awards_count}
+        )
+
+    try:
+        db.delete(user)
+        db.commit()
+        logger.info(f"Admin {admin_user.username} deleted user {user_id} ({user.username})")
+    except SQLAlchemyError as e:
+        db.rollback()
+        logger.error(f"Failed to delete user: {e}")
+        raise DatabaseError(message="Nie można usunąć użytkownika")
+
+    return {
+        "message": "Użytkownik został usunięty",
+        "user_id": user_id,
+        "username": user.username
+    }
