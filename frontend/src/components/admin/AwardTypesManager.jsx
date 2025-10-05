@@ -18,8 +18,11 @@ function EditAwardTypeModal({ awardType, onClose, onSuccess }) {
   const [showLucideSelector, setShowLucideSelector] = useState(false);
   const [uploadingIcon, setUploadingIcon] = useState(false);
   const [iconMode, setIconMode] = useState(
-    awardType.icon_type === "custom" ? "custom" :
-    awardType.icon_type === "lucide" ? "lucide" : "emoji"
+    awardType.icon_type === "custom"
+      ? "custom"
+      : awardType.icon_type === "lucide"
+      ? "lucide"
+      : "emoji"
   );
 
   const handleSave = async () => {
@@ -263,7 +266,9 @@ function EditAwardTypeModal({ awardType, onClose, onSuccess }) {
               <input
                 type="text"
                 value={formData.icon}
-                onChange={(e) => setFormData({ ...formData, icon: e.target.value })}
+                onChange={(e) =>
+                  setFormData({ ...formData, icon: e.target.value })
+                }
                 className="w-full bg-gray-700 border border-gray-600 text-white px-4 py-2 rounded-lg"
                 maxLength={10}
                 placeholder="🏆"
@@ -453,16 +458,14 @@ function AwardTypesManager() {
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <h2 className="text-xl font-semibold">
-          Typy Nagród ({awardTypes.length})
-        </h2>
-        <button
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg flex items-center gap-2"
-          disabled
-        >
-          <Plus size={20} />
-          Dodaj typ (TODO)
-        </button>
+        <div className="mb-6">
+          <h2 className="text-xl font-semibold">
+            Zarządzanie nagrodami ({awardTypes.length})
+          </h2>
+          <p className="text-gray-400 text-sm mt-1">
+            Edytuj typy nagród, zmień ikony i kolory
+          </p>
+        </div>
       </div>
 
       <div className="space-y-3">
