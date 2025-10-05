@@ -2,12 +2,15 @@
 SQLAlchemy model dla Clip (klipy i screenshoty)
 """
 import enum
+import logging
 from datetime import datetime
 from pathlib import Path
 
 from app.core.database import Base
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Enum as SQLEnum
 from sqlalchemy.orm import relationship, validates
+
+logger = logging.getLogger(__name__)
 
 
 class ClipType(str, enum.Enum):
@@ -56,7 +59,7 @@ class Clip(Base):
 
     @property
     def award_count(self) -> int:
-        """Zwraca liczbę nagród przyznanych do klipa"""
+        """Zwraca liczbę nagród przyznanych do klipu"""
         return len(self.awards) if self.awards else 0
 
     @property

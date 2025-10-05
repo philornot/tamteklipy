@@ -26,6 +26,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import desc, asc
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import SQLAlchemyError
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -138,7 +139,7 @@ async def upload_file(
         try:
             file_content = await file.read()
             file_size = len(file_content)
-        except Exception as e:
+        except (RuntimeError, ValueError) as e:
             logger.error(f"Failed to read file: {e}")
             raise FileUploadError(
                 message="Nie można odczytać pliku",
@@ -163,7 +164,7 @@ async def upload_file(
             storage_dir = Path(settings.screenshots_path)
 
         if settings.environment == "development":
-            storage_dir = Path("uploads") / ("clips" if clip_type == ClipType.VIDEO else "screenshots")
+            storage_dir = (Path.cwd() / "uploads" / ("clips" if clip_type == ClipType.VIDEO else "screenshots")).resolve()
 
         # 6. Sprawdź miejsce na dysku
         try:
@@ -175,21 +176,21 @@ async def upload_file(
         # 7. Utwórz katalog
         try:
             storage_dir.mkdir(parents=True, exist_ok=True)
-        except Exception as e:
+        except OSError as e:
             logger.error(f"Failed to create directory: {e}")
             raise StorageError(
                 message="Nie można utworzyć katalogu",
                 path=str(storage_dir)
             )
 
-        file_path = storage_dir / unique_filename
+        file_path = (storage_dir / unique_filename)
 
         # 8. Zapisz plik
         try:
             with open(file_path, "wb") as f:
                 f.write(file_content)
             logger.info(f"File saved: {file_path}")
-        except Exception as e:
+        except OSError as e:
             logger.error(f"Failed to write file: {e}")
             raise StorageError(
                 message="Nie można zapisać pliku na dysku",
@@ -202,13 +203,11 @@ async def upload_file(
 
         if clip_type == ClipType.VIDEO:
             try:
-                from app.services.thumbnail_service import generate_thumbnail, extract_video_metadata
-
                 video_metadata = extract_video_metadata(str(file_path))
 
                 thumbnails_dir = Path(settings.thumbnails_path)
                 if settings.environment == "development":
-                    thumbnails_dir = Path("uploads/thumbnails")
+                    thumbnails_dir = (Path.cwd() / "uploads" / "thumbnails").resolve()
 
                 thumbnails_dir.mkdir(parents=True, exist_ok=True)
 
@@ -223,18 +222,21 @@ async def upload_file(
                     quality=2
                 )
 
-                thumbnail_path = str(thumbnail_full_path)
+                thumbnail_path = str(thumbnail_full_path.resolve())
                 logger.info(f"Thumbnail generated: {thumbnail_path}")
 
-            except Exception as e:
+            except FileUploadError as e:
                 logger.warning(f"Thumbnail generation failed: {e}")
                 # Kontynuuj mimo błędu thumbnail
+            except OSError as e:
+                logger.warning(f"Thumbnail directory error: {e}")
+                # Kontynuuj mimo błędu katalogu thumbnail
 
         # 10. Zapisz do bazy
         try:
             new_clip = Clip(
                 filename=file.filename,
-                file_path=str(file_path),
+                file_path=str(file_path.resolve()),
                 thumbnail_path=thumbnail_path,
                 clip_type=clip_type,
                 file_size=file_size,
@@ -250,14 +252,14 @@ async def upload_file(
 
             logger.info(f"Clip created: ID={new_clip.id}")
 
-        except Exception as e:
+        except SQLAlchemyError as e:
             logger.error(f"Database error: {e}")
             # Usuń plik jeśli zapis do bazy się nie udał
             try:
                 file_path.unlink()
                 if thumbnail_path:
                     Path(thumbnail_path).unlink()
-            except:
+            except OSError:
                 pass
 
             from app.core.exceptions import DatabaseError
@@ -561,7 +563,7 @@ async def download_clip(
 
 class BulkDownloadRequest(BaseModel):
     """Request body dla bulk download"""
-    clip_ids: List[int] = Field(..., min_items=1, max_items=50)
+    clip_ids: List[int] = Field(..., min_length=1, max_length=50)
 
 
 @router.post("/download-bulk")
@@ -668,7 +670,7 @@ async def download_bulk(
                     zip_file.write(file_path, arcname=filename_in_zip)
                     logger.debug(f"Added to ZIP: {filename_in_zip}")
 
-                except Exception as e:
+                except OSError as e:
                     logger.error(f"Failed to add file to ZIP: {file_path}, error: {e}")
                     # Kontynuuj z pozostałymi plikami
 
@@ -842,7 +844,14 @@ def check_disk_space(storage_path: Path, required_bytes: int) -> bool:
         StorageError: Jeśli nie ma wystarczająco miejsca
     """
     try:
-        stat = shutil.disk_usage(storage_path)
+        # Jeśli katalog nie istnieje, sprawdzamy dysk/partycję (anchor) bieżącego katalogu
+        if storage_path.exists():
+            target = storage_path
+        else:
+            anchor = storage_path.anchor or Path.cwd().anchor
+            target = Path(anchor)
+
+        stat = shutil.disk_usage(target)
         free_space = stat.free
 
         # Zostawmy przynajmniej 1GB wolnego miejsca jako bufor
@@ -855,13 +864,13 @@ def check_disk_space(storage_path: Path, required_bytes: int) -> bool:
             from app.core.exceptions import StorageError
             raise StorageError(
                 message=f"Brak miejsca na dysku: dostępne {free_mb:.0f}MB, wymagane {required_mb:.0f}MB",
-                path=str(storage_path)
+                path=str(target)
             )
 
         return True
 
-    except Exception as e:
-        logger.error(f"Failed to check disk space: {e}")
+    except OSError as e:
+        logger.warning(f"Failed to check disk space: {e}")
         # Nie przerywamy uploadu, jeśli nie możemy sprawdzić miejsca
         return True
 

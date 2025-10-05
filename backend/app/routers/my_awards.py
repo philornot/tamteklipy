@@ -13,6 +13,7 @@ from app.models.user import User
 from app.routers.admin import AwardTypeResponse
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import SQLAlchemyError
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -43,8 +44,7 @@ async def get_my_custom_awards(
             display_name=a.display_name,
             description=a.description,
             icon=a.icon,
-            color=a.color,
-            icon_url=f"/api/admin/award-types/{a.id}/icon" if a.icon_path else None
+            color=a.color
         )
         for a in custom_awards
     ]
@@ -122,7 +122,7 @@ async def create_custom_award(
         db.commit()
         db.refresh(new_award)
         logger.info(f"Custom award created: {scope_name} by {current_user.username}")
-    except Exception as e:
+    except SQLAlchemyError as e:
         db.rollback()
         logger.error(f"Failed to create custom award: {e}")
         raise DatabaseError(message="Nie można utworzyć nagrody", operation="create_custom_award")
@@ -133,8 +133,7 @@ async def create_custom_award(
         display_name=new_award.display_name,
         description=new_award.description,
         icon=new_award.icon,
-        color=new_award.color,
-        icon_url=None  # Jeszcze nie ma ikony
+        color=new_award.color
     )
 
 
@@ -177,7 +176,7 @@ async def delete_custom_award(
         if icon_path.exists():
             try:
                 icon_path.unlink()
-            except:
+            except OSError:
                 pass
 
     # Remove scope z usera
@@ -185,7 +184,12 @@ async def delete_custom_award(
         current_user.award_scopes = [s for s in current_user.award_scopes if s != award_type.name]
 
     db.delete(award_type)
-    db.commit()
+    try:
+        db.commit()
+    except SQLAlchemyError as e:
+        db.rollback()
+        logger.error(f"Failed to hard delete custom award: {e}")
+        raise DatabaseError(message="Nie można usunąć nagrody", operation="delete_custom_award")
 
     logger.info(f"Hard delete custom award: {award_type.name}")
     return None
