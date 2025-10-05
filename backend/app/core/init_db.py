@@ -25,7 +25,7 @@ def init_db():
     logger.info("Tabele utworzone pomyślnie!")
 
     # Seeduj podstawowe AwardTypes
-    seed_system_awards()
+    # seed_system_awards()
 
     # Wyświetl informacje o bazie
     db_info = get_database_info()
@@ -36,7 +36,7 @@ def init_db():
 
 
 def seed_system_awards():
-    """Seeduje systemowe typy nagród jeśli nie istnieją"""
+    """Seeduje systemowe typy nagród, jeśli nie istnieją"""
     db = SessionLocal()
     try:
         existing_count = db.query(AwardType).filter(AwardType.is_system_award == True).count()
