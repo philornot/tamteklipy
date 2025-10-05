@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
 import api from "../services/api";
 import ClipGrid from "../components/clips/ClipGrid";
@@ -25,11 +25,7 @@ function DashboardPage() {
   const sortOrder = searchParams.get("sort_order") || "desc";
   const clipType = searchParams.get("clip_type") || "";
 
-  useEffect(() => {
-    fetchClips();
-  }, [page, sortBy, sortOrder, clipType]);
-
-  const fetchClips = async () => {
+  const fetchClips = useCallback(async () => {
     setLoading(true);
     setError(null);
 
@@ -60,7 +56,11 @@ function DashboardPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [page, sortBy, sortOrder, clipType]);
+
+  useEffect(() => {
+    fetchClips();
+  }, [fetchClips]);
 
   const handlePageChange = (newPage) => {
     setSearchParams({

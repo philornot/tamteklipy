@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import {createContext, useEffect, useState} from "react";
 import api from "../services/api";
 
@@ -59,9 +60,20 @@ export function AuthProvider({children}) {
             return {success: true};
         } catch (error) {
             console.error("Login failed:", error);
+            const status = error.response?.status;
+            const backendMessage = error.response?.data?.message;
+
+            // Specjalny komunikat dla konta nieaktywnego
+            if (status === 401 && backendMessage === "Konto jest nieaktywne") {
+                return {
+                    success: false,
+                    error: "Twoje konto zostało dezaktywowane przez administratora. Skontaktuj się z administratorem, aby je ponownie aktywować.",
+                };
+            }
+
             return {
                 success: false,
-                error: error.response?.data?.message || "Błąd logowania",
+                error: backendMessage || "Błąd logowania",
             };
         }
     };

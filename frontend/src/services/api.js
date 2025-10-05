@@ -27,9 +27,20 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
+      const reqUrl = error.config?.url || "";
+      const isLoginRequest = reqUrl.includes("/auth/login");
+      const onLoginPage = typeof window !== "undefined" && window.location?.pathname?.startsWith("/login");
+
+      // Wyczyść tokeny (zawsze przy 401)
       localStorage.removeItem("access_token");
       localStorage.removeItem("user");
-      window.location.href = "/login";
+
+      // Nie przeładowuj, jeśli:
+      // - błąd dotyczy samego logowania (chcemy pokazać komunikat na /login)
+      // - już jesteśmy na stronie logowania (unikaj zbędnego reloadu)
+      if (!isLoginRequest && !onLoginPage) {
+        window.location.href = "/login";
+      }
     }
     return Promise.reject(error);
   }

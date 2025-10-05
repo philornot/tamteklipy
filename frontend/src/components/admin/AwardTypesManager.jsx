@@ -395,7 +395,7 @@ function AwardTypesManager() {
     try {
       const response = await api.get("/admin/award-types/detailed");
       setAwardTypes(response.data);
-    } catch (err) {
+    } catch {
       toast.error("Nie udało się załadować typów nagród");
     } finally {
       setLoading(false);

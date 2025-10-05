@@ -1,4 +1,4 @@
-import {useEffect, useState} from "react";
+import {useEffect, useState, useCallback} from "react";
 import {Calendar, Edit2, Film, Loader, Save, Search, Trash2, User, X} from "lucide-react";
 import api from "../../services/api";
 import toast from "react-hot-toast";
@@ -134,11 +134,7 @@ function AwardsManager() {
     const [deleting, setDeleting] = useState({});
     const [filterAwardType, setFilterAwardType] = useState("");
 
-    useEffect(() => {
-        fetchAwards();
-    }, [currentPage, filterAwardType]);
-
-    const fetchAwards = async () => {
+    const fetchAwards = useCallback(async () => {
         setLoading(true);
         try {
             const params = {
@@ -161,7 +157,11 @@ function AwardsManager() {
         } finally {
             setLoading(false);
         }
-    };
+    }, [currentPage, filterAwardType]);
+
+    useEffect(() => {
+        fetchAwards();
+    }, [fetchAwards]);
 
     const handleDelete = async (awardId) => {
         if (!confirm("Czy na pewno chcesz usunąć tę nagrodę?")) {

@@ -164,7 +164,7 @@ function UsersManager() {
     try {
       const response = await api.get("/admin/users");
       setUsers(response.data);
-    } catch (err) {
+    } catch {
       toast.error("Nie udało się załadować użytkowników");
     } finally {
       setLoading(false);

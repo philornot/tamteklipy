@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Trash2,
   Search,
@@ -22,11 +22,7 @@ function ClipsManager() {
   const [totalPages, setTotalPages] = useState(1);
   const [deleting, setDeleting] = useState({});
 
-  useEffect(() => {
-    fetchClips();
-  }, [currentPage, filterType]);
-
-  const fetchClips = async () => {
+  const fetchClips = useCallback(async () => {
     setLoading(true);
     try {
       const params = {
@@ -49,7 +45,11 @@ function ClipsManager() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentPage, filterType]);
+
+  useEffect(() => {
+    fetchClips();
+  }, [fetchClips]);
 
   const handleDelete = async (clipId, clipName) => {
     if (!confirm(`Czy na pewno chcesz usunąć klip "${clipName}"?`)) {
@@ -271,13 +271,6 @@ function ClipsManager() {
           >
             Następna
           </button>
-        </div>
-      )}
-
-      {/* Info about backend endpoint */}
-      {clips.length > 0 && (
-        <div className="mt-4 p-3 bg-yellow-900/20 border border-yellow-700 rounded text-yellow-300 text-sm">
-          <strong>Uwaga:</strong> Funkcja usuwania wymaga implementacji endpointu DELETE /api/admin/clips/:id w backendzie
         </div>
       )}
     </div>

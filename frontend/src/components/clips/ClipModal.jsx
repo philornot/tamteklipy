@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import {
   X,
   Download,
@@ -15,6 +15,17 @@ function ClipModal({ clip, onClose }) {
   const [clipDetails, setClipDetails] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  const fetchClipDetails = useCallback(async () => {
+    try {
+      const response = await api.get(`/files/clips/${clip.id}`);
+      setClipDetails(response.data);
+    } catch (err) {
+      console.error("Failed to fetch clip details:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, [clip.id]);
+
   useEffect(() => {
     fetchClipDetails();
 
@@ -24,18 +35,7 @@ function ClipModal({ clip, onClose }) {
     };
     window.addEventListener("keydown", handleEsc);
     return () => window.removeEventListener("keydown", handleEsc);
-  }, [clip.id]);
-
-  const fetchClipDetails = async () => {
-    try {
-      const response = await api.get(`/files/clips/${clip.id}`);
-      setClipDetails(response.data);
-    } catch (err) {
-      console.error("Failed to fetch clip details:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [fetchClipDetails, onClose]);
 
   const handleDownload = () => {
     window.open(
