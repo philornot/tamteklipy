@@ -1034,3 +1034,96 @@ async def delete_user(
         "user_id": user_id,
         "username": user.username
     }
+
+
+class UserCreate(BaseModel):
+    """Schema do tworzenia użytkownika przez admina"""
+    username: str = Field(..., min_length=3, max_length=50)
+    email: Optional[str] = None
+    full_name: Optional[str] = None
+    is_admin: bool = False
+
+
+@router.post("/users", status_code=status.HTTP_201_CREATED)
+async def create_user(
+        user_data: UserCreate,
+        db: Session = Depends(get_db),
+        admin_user: User = Depends(require_admin)
+):
+    """
+    Utwórz nowego użytkownika (admin only)
+    POST /api/admin/users
+
+    Użytkownik jest tworzony bez hasła - może je ustawić później w profilu
+    """
+    # Sprawdź duplikat username
+    existing = db.query(User).filter(
+        User.username == user_data.username.lower()
+    ).first()
+
+    if existing:
+        raise DuplicateError(
+            resource="Użytkownik",
+            field="username",
+            value=user_data.username
+        )
+
+    # Sprawdź duplikat email
+    if user_data.email:
+        existing_email = db.query(User).filter(
+            User.email == user_data.email
+        ).first()
+
+        if existing_email:
+            raise DuplicateError(
+                resource="Użytkownik",
+                field="email",
+                value=user_data.email
+            )
+
+    # Utwórz użytkownika bez hasła (pusty hash)
+    from app.core.security import hash_password
+    new_user = User(
+        username=user_data.username.lower(),
+        email=user_data.email,
+        hashed_password=hash_password(""),  # Puste hasło
+        full_name=user_data.full_name,
+        is_active=True,
+        is_admin=user_data.is_admin,
+        award_scopes=[]
+    )
+
+    db.add(new_user)
+    db.flush()
+
+    # Utwórz imienną nagrodę
+    from app.models.award_type import AwardType
+    personal_award = AwardType(
+        name=f"award:personal_{new_user.username}",
+        display_name=f"Nagroda {new_user.username}",
+        description=f"Osobista nagroda użytkownika {new_user.username}",
+        icon="⭐",
+        color="#FFD700",
+        is_personal=True,
+        created_by_user_id=new_user.id
+    )
+    db.add(personal_award)
+
+    try:
+        db.commit()
+        db.refresh(new_user)
+        logger.info(f"Admin {admin_user.username} created user {new_user.username}")
+    except SQLAlchemyError as e:
+        db.rollback()
+        logger.error(f"Failed to create user: {e}")
+        raise DatabaseError(message="Nie można utworzyć użytkownika")
+
+    return {
+        "id": new_user.id,
+        "username": new_user.username,
+        "email": new_user.email,
+        "full_name": new_user.full_name,
+        "is_active": new_user.is_active,
+        "is_admin": new_user.is_admin,
+        "message": "Użytkownik utworzony bez hasła - może je ustawić w profilu"
+    }

@@ -1,5 +1,5 @@
 import { Link, useNavigate } from "react-router-dom";
-import { Award, Home, LogOut, Settings, Upload } from "lucide-react";
+import { Award, Home, LogOut, Settings, Upload, BarChart3 } from "lucide-react";
 
 function Header({ user, onLogout }) {
   const navigate = useNavigate();
@@ -46,6 +46,15 @@ function Header({ user, onLogout }) {
               >
                 <Upload size={20} />
                 <span>Upload</span>
+              </Link>
+
+              {/* Nowa zakładka: Statystyki */}
+              <Link
+                to="/stats"
+                className="flex items-center gap-2 text-gray-300 hover:text-white transition"
+              >
+                <BarChart3 size={20} />
+                <span>Statystyki</span>
               </Link>
 
               {/* Panel zakładka dla admina */}

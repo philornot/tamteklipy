@@ -16,9 +16,9 @@ function LoginPage() {
     e.preventDefault();
     setError("");
 
-    // Walidacja
-    if (!username || !password) {
-      setError("Wypełnij wszystkie pola");
+    // Walidacja: wymagaj tylko username
+    if (!username) {
+      setError("Wprowadź nazwę użytkownika");
       return;
     }
 
@@ -63,7 +63,7 @@ function LoginPage() {
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               className="input-field w-full"
-              placeholder="admin"
+              placeholder="Wprowadź nazwę użytkownika"
               disabled={loading}
               required
             />
@@ -71,7 +71,7 @@ function LoginPage() {
 
           <div className="mb-6">
             <label htmlFor="password" className="block text-gray-300 mb-2">
-              Password
+              Hasło
             </label>
             <input
               id="password"
@@ -81,7 +81,6 @@ function LoginPage() {
               className="input-field w-full"
               placeholder="••••••••"
               disabled={loading}
-              required
             />
           </div>
 

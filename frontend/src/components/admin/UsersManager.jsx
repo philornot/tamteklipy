@@ -1,5 +1,14 @@
 import { useEffect, useState } from "react";
-import { Edit2, Shield, Trash2, Loader, Plus, X, Save, UserX } from "lucide-react";
+import {
+  Edit2,
+  Shield,
+  Trash2,
+  Loader,
+  Plus,
+  X,
+  Save,
+  UserX,
+} from "lucide-react";
 import api from "../../services/api";
 import toast from "react-hot-toast";
 import { useAuth } from "../../hooks/useAuth";
@@ -144,6 +153,7 @@ function UsersManager() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editingUser, setEditingUser] = useState(null);
+  const [showCreateModal, setShowCreateModal] = useState(false);
   const [deleting, setDeleting] = useState({});
 
   useEffect(() => {
@@ -178,19 +188,36 @@ function UsersManager() {
       toast.success("Użytkownik usunięty");
       await fetchUsers();
     } catch (err) {
-      toast.error(err.response?.data?.message || "Nie udało się usunąć użytkownika");
+      toast.error(
+        err.response?.data?.message || "Nie udało się usunąć użytkownika"
+      );
     } finally {
       setDeleting((prev) => ({ ...prev, [userId]: false }));
     }
   };
 
-  const handleToggleActive = async (userId, currentStatus) => {
+  const handleToggleActive = async (userId, isActive) => {
+    const action = isActive ? "dezaktywowany" : "aktywowany";
+
+    if (!confirm(`Czy na pewno chcesz ${action} tego użytkownika?`)) {
+      return;
+    }
+
+    setLoading(true);
+
     try {
-      await api.patch(`/admin/users/${userId}/${currentStatus ? 'deactivate' : 'activate'}`);
-      toast.success(currentStatus ? "Użytkownik dezaktywowany" : "Użytkownik aktywowany");
-      await fetchUsers();
+      await api.patch(`/admin/users/${userId}`, {
+        is_active: !isActive,
+      });
+      toast.success(`Użytkownik został ${action}`);
+      fetchUsers();
     } catch (err) {
-      toast.error(err.response?.data?.message || "Nie udało się zmienić statusu");
+      toast.error(
+        err.response?.data?.message ||
+          "Nie udało się zmienić statusu użytkownika"
+      );
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -213,6 +240,13 @@ function UsersManager() {
             Zarządzaj kontami użytkowników
           </p>
         </div>
+        <button
+          onClick={() => setShowCreateModal(true)}
+          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg flex items-center gap-2"
+        >
+          <Plus size={20} />
+          Dodaj użytkownika
+        </button>
       </div>
 
       <div className="space-y-3">
@@ -243,7 +277,9 @@ function UsersManager() {
                     </span>
                   )}
                 </div>
-                <p className="text-sm text-gray-400">{user.email || "Brak email"}</p>
+                <p className="text-sm text-gray-400">
+                  {user.email || "Brak email"}
+                </p>
                 {user.full_name && (
                   <p className="text-xs text-gray-500 mt-1">{user.full_name}</p>
                 )}
@@ -259,11 +295,28 @@ function UsersManager() {
                 <Edit2 size={16} />
               </button>
 
+              {/* Toggle active status */}
+              <button
+                onClick={() => handleToggleActive(user.id, user.is_active)}
+                className="p-2 hover:bg-gray-700 rounded text-yellow-400 hover:text-yellow-300"
+                title={
+                  user.is_active
+                    ? "Dezaktywuj użytkownika"
+                    : "Aktywuj użytkownika"
+                }
+              >
+                {user.is_active ? <UserX size={16} /> : <Plus size={16} />}
+              </button>
+
               <button
                 onClick={() => handleDelete(user.id, user.username)}
                 disabled={deleting[user.id] || user.id === currentUser?.id}
                 className="p-2 hover:bg-gray-700 rounded text-red-400 hover:text-red-300 disabled:opacity-50 disabled:cursor-not-allowed"
-                title={user.id === currentUser?.id ? "Nie możesz usunąć siebie" : "Usuń"}
+                title={
+                  user.id === currentUser?.id
+                    ? "Nie możesz usunąć siebie"
+                    : "Usuń"
+                }
               >
                 {deleting[user.id] ? (
                   <Loader className="animate-spin" size={16} />
@@ -283,8 +336,158 @@ function UsersManager() {
           onSuccess={fetchUsers}
         />
       )}
+
+      {showCreateModal && (
+        <CreateUserModal
+          onClose={() => setShowCreateModal(false)}
+          onSuccess={fetchUsers}
+        />
+      )}
     </div>
   );
 }
 
 export default UsersManager;
+
+function CreateUserModal({ onClose, onSuccess }) {
+  const [formData, setFormData] = useState({
+    username: "",
+    email: "",
+    full_name: "",
+    is_admin: false,
+  });
+  const [loading, setLoading] = useState(false);
+
+  const handleCreate = async () => {
+    if (!formData.username) {
+      toast.error("Username jest wymagany");
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const response = await api.post("/admin/users", formData);
+      toast.success(
+        `Użytkownik ${formData.username} utworzony! ${response.data.message}`
+      );
+      onSuccess();
+      onClose();
+    } catch (err) {
+      toast.error(
+        err.response?.data?.message || "Nie udało się utworzyć użytkownika"
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-gray-800 rounded-lg max-w-md w-full p-6 border border-gray-700"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-bold">Dodaj użytkownika</h2>
+          <button onClick={onClose} className="p-2 hover:bg-gray-700 rounded">
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <label className="block text-gray-300 mb-2">Username *</label>
+            <input
+              type="text"
+              value={formData.username}
+              onChange={(e) =>
+                setFormData({ ...formData, username: e.target.value })
+              }
+              className="w-full bg-gray-700 border border-gray-600 text-white px-4 py-2 rounded-lg"
+              placeholder="jan_kowalski"
+            />
+          </div>
+
+          <div>
+            <label className="block text-gray-300 mb-2">
+              Email (opcjonalny)
+            </label>
+            <input
+              type="email"
+              value={formData.email}
+              onChange={(e) =>
+                setFormData({ ...formData, email: e.target.value })
+              }
+              className="w-full bg-gray-700 border border-gray-600 text-white px-4 py-2 rounded-lg"
+              placeholder="jan@example.com"
+            />
+          </div>
+
+          <div>
+            <label className="block text-gray-300 mb-2">
+              Imię i nazwisko (opcjonalne)
+            </label>
+            <input
+              type="text"
+              value={formData.full_name}
+              onChange={(e) =>
+                setFormData({ ...formData, full_name: e.target.value })
+              }
+              className="w-full bg-gray-700 border border-gray-600 text-white px-4 py-2 rounded-lg"
+              placeholder="Jan Kowalski"
+            />
+          </div>
+
+          <div>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={formData.is_admin}
+                onChange={(e) =>
+                  setFormData({ ...formData, is_admin: e.target.checked })
+                }
+                className="w-4 h-4"
+              />
+              <span className="text-gray-300">Administrator</span>
+            </label>
+          </div>
+
+          <div className="p-3 bg-blue-900/20 border border-blue-700 rounded text-blue-300 text-sm">
+            Użytkownik zostanie utworzony bez hasła. Może je ustawić później w
+            profilu.
+          </div>
+
+          <div className="flex gap-3 mt-6">
+            <button
+              onClick={onClose}
+              className="flex-1 px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition"
+            >
+              Anuluj
+            </button>
+            <button
+              onClick={handleCreate}
+              disabled={loading || !formData.username}
+              className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {loading ? (
+                <>
+                  <Loader className="animate-spin" size={16} />
+                  Tworzenie...
+                </>
+              ) : (
+                <>
+                  <Plus size={16} />
+                  Utwórz
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
