@@ -12,6 +12,7 @@ from typing import List, Optional
 
 import aiofiles
 from app.core.config import settings
+from app.core.database import engine
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.core.exceptions import FileUploadError, ValidationError, NotFoundError, AuthorizationError, StorageError, \
@@ -25,8 +26,8 @@ from fastapi import APIRouter, UploadFile, File, Depends, Request
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import desc, asc
-from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -164,7 +165,8 @@ async def upload_file(
             storage_dir = Path(settings.screenshots_path)
 
         if settings.environment == "development":
-            storage_dir = (Path.cwd() / "uploads" / ("clips" if clip_type == ClipType.VIDEO else "screenshots")).resolve()
+            storage_dir = (
+                    Path.cwd() / "uploads" / ("clips" if clip_type == ClipType.VIDEO else "screenshots")).resolve()
 
         # 6. Sprawdź miejsce na dysku
         try:
@@ -197,22 +199,24 @@ async def upload_file(
                 path=str(file_path)
             )
 
-        # 9. Generuj thumbnail dla video
+        # 9. Generuj thumbnail dla video i screenshotów
         thumbnail_path = None
         video_metadata = None
 
-        if clip_type == ClipType.VIDEO:
-            try:
+        try:
+            # Przygotuj katalog na thumbnails
+            thumbnails_dir = Path(settings.thumbnails_path)
+            if settings.environment == "development":
+                thumbnails_dir = (Path.cwd() / "uploads" / "thumbnails").resolve()
+
+            thumbnails_dir.mkdir(parents=True, exist_ok=True)
+
+            thumbnail_filename = f"{Path(unique_filename).stem}.jpg"
+            thumbnail_full_path = thumbnails_dir / thumbnail_filename
+
+            if clip_type == ClipType.VIDEO:
+                # Video: użyj FFmpeg z timestamp
                 video_metadata = extract_video_metadata(str(file_path))
-
-                thumbnails_dir = Path(settings.thumbnails_path)
-                if settings.environment == "development":
-                    thumbnails_dir = (Path.cwd() / "uploads" / "thumbnails").resolve()
-
-                thumbnails_dir.mkdir(parents=True, exist_ok=True)
-
-                thumbnail_filename = f"{Path(unique_filename).stem}.jpg"
-                thumbnail_full_path = thumbnails_dir / thumbnail_filename
 
                 generate_thumbnail(
                     video_path=str(file_path),
@@ -222,15 +226,31 @@ async def upload_file(
                     quality=2
                 )
 
-                thumbnail_path = str(thumbnail_full_path.resolve())
-                logger.info(f"Thumbnail generated: {thumbnail_path}")
+                logger.info(f"Video thumbnail generated: {thumbnail_full_path}")
 
-            except FileUploadError as e:
-                logger.warning(f"Thumbnail generation failed: {e}")
-                # Kontynuuj mimo błędu thumbnail
-            except OSError as e:
-                logger.warning(f"Thumbnail directory error: {e}")
-                # Kontynuuj mimo błędu katalogu thumbnail
+            else:
+                # Screenshot: użyj FFmpeg do skalowania obrazu
+                from app.services.thumbnail_service import generate_image_thumbnail, extract_image_metadata
+
+                video_metadata = extract_image_metadata(str(file_path))
+
+                generate_image_thumbnail(
+                    image_path=str(file_path),
+                    output_path=str(thumbnail_full_path),
+                    width=320,
+                    quality=2
+                )
+
+                logger.info(f"Image thumbnail generated: {thumbnail_full_path}")
+
+            thumbnail_path = str(thumbnail_full_path.resolve())
+
+        except FileUploadError as e:
+            logger.warning(f"Thumbnail generation failed: {e}")
+            # Kontynuuj mimo błędu thumbnail
+        except OSError as e:
+            logger.warning(f"Thumbnail directory error: {e}")
+            # Kontynuuj mimo błędu katalogu thumbnail
 
         # 10. Zapisz do bazy
         try:
@@ -247,7 +267,9 @@ async def upload_file(
             )
 
             db.add(new_clip)
+            logger.info(f"About to commit clip ID={new_clip.id}")
             db.commit()
+            logger.info(f"Clip committed successfully")
             db.refresh(new_clip)
 
             logger.info(f"Clip created: ID={new_clip.id}")
@@ -338,7 +360,11 @@ async def list_clips(
     offset = (page - 1) * limit
 
     # Bazowe query
+    logger.info(f"Database URL: {engine.url}")
+
     query = db.query(Clip).filter(Clip.is_deleted == False)
+    total = query.count()
+    logger.info(f"Total clips found: {total}")
 
     # Filtrowanie po typie
     if clip_type:
@@ -380,6 +406,7 @@ async def list_clips(
 
     # Pobierz total przed paginacją
     total = query.count()
+    logger.info(f"Total clips found: {total}")
 
     from app.models.award_type import AwardType
     from sqlalchemy.orm import joinedload
@@ -659,7 +686,7 @@ async def download_bulk(
 
         with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
             for clip in existing_clips:
-                file_path = Path(clip.file_path)
+                file_to_path = Path(clip.file_path)
 
                 # Użyj oryginalnej nazwy pliku w ZIP
                 # Dodaj ID żeby uniknąć kolizji nazw
@@ -667,11 +694,11 @@ async def download_bulk(
 
                 try:
                     # Dodaj plik do ZIP
-                    zip_file.write(file_path, arcname=filename_in_zip)
+                    zip_file.write(file_to_path, arcname=filename_in_zip)
                     logger.debug(f"Added to ZIP: {filename_in_zip}")
 
                 except OSError as e:
-                    logger.error(f"Failed to add file to ZIP: {file_path}, error: {e}")
+                    logger.error(f"Failed to add file to ZIP: {file_to_path}, error: {e}")
                     # Kontynuuj z pozostałymi plikami
 
         # Przenieś wskaźnik na początek bufora
@@ -887,23 +914,6 @@ def calculate_file_hash(file_content: bytes) -> str:
         str: SHA256 hash jako hex string
     """
     return hashlib.sha256(file_content).hexdigest()
-
-
-def check_duplicate(db: Session, file_hash: str, user_id: int) -> Optional[Clip]:
-    """
-    Sprawdza czy użytkownik już uploadował ten sam plik
-
-    Args:
-        db: Sesja bazy danych
-        file_hash: SHA256 hash pliku
-        user_id: ID użytkownika
-
-    Returns:
-        Clip: Istniejący klip jeśli duplikat, None jeśli nie
-    """
-    # Dodaj pole file_hash do modelu Clip (wymaga migracji)
-    # Na razie zwracamy None
-    return None
 
 
 def can_access_clip(clip: Clip, user: User) -> bool:
