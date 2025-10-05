@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import * as LucideIcons from "lucide-react";
-import { Edit2, Loader, Plus, Sparkles, Trash2, Upload } from "lucide-react";
+import { Edit2, Loader, Sparkles, Trash2, Upload } from "lucide-react";
 import api from "../../services/api";
 import toast from "react-hot-toast";
 import LucideIconSelector from "./LucideIconSelector";
@@ -82,10 +82,6 @@ function EditAwardTypeModal({ awardType, onClose, onSuccess }) {
     }
   };
 
-  const handleClearIcon = () => {
-    setIconMode("emoji");
-    setFormData({ ...formData, lucide_icon: "" });
-  };
 
   const renderCurrentIcon = () => {
     if (awardType.icon_type === "custom") {
@@ -488,7 +484,7 @@ function AwardTypesManager() {
                 )}
                 {type.is_personal && (
                   <span className="text-xs bg-blue-600 px-2 py-1 rounded">
-                    Personal
+                    Imienna
                   </span>
                 )}
               </div>
@@ -527,8 +523,10 @@ function AwardTypesManager() {
                 }
                 className="p-2 hover:bg-gray-700 rounded text-red-400 hover:text-red-300 disabled:opacity-50 disabled:cursor-not-allowed"
                 title={
-                  type.is_system_award || type.is_personal
-                    ? "Nie można usunąć"
+                  type.is_system_award
+                    ? "Nagroda systemowa - nie można usunąć"
+                    : type.is_personal
+                    ? "Nagroda imienna - nie można usunąć"
                     : "Usuń"
                 }
               >
