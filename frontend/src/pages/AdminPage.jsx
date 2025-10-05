@@ -1,16 +1,9 @@
 import { useState } from "react";
-import {
-  Award,
-  BarChart3,
-  Users,
-  Film,
-  Award as AwardIcon,
-} from "lucide-react";
+import { Award, BarChart3, Film, Users } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { Navigate } from "react-router-dom";
 import StatsPanel from "../components/admin/StatsPanel.jsx";
 import UsersManager from "../components/admin/UsersManager.jsx";
-import AwardsManager from "../components/admin/AwardsManager.jsx";
 import AwardTypesManager from "../components/admin/AwardTypesManager.jsx";
 import ClipsManager from "../components/admin/ClipsManager.jsx";
 
@@ -52,17 +45,6 @@ function AdminPage() {
           Użytkownicy
         </button>
         <button
-          onClick={() => setActiveTab("awards")}
-          className={`px-4 py-2 flex items-center gap-2 whitespace-nowrap ${
-            activeTab === "awards"
-              ? "border-b-2 border-blue-500 text-white"
-              : "text-gray-400"
-          }`}
-        >
-          <Award size={20} />
-          Nagrody
-        </button>
-        <button
           onClick={() => setActiveTab("award-types")}
           className={`px-4 py-2 flex items-center gap-2 whitespace-nowrap ${
             activeTab === "award-types"
@@ -70,8 +52,8 @@ function AdminPage() {
               : "text-gray-400"
           }`}
         >
-          <AwardIcon size={20} />
-          Typy Nagród
+          <Award size={20} />
+          Nagrody
         </button>
         <button
           onClick={() => setActiveTab("stats")}
@@ -90,7 +72,6 @@ function AdminPage() {
       <div>
         {activeTab === "clips" && <ClipsManager />}
         {activeTab === "users" && <UsersManager />}
-        {activeTab === "awards" && <AwardsManager />}
         {activeTab === "award-types" && <AwardTypesManager />}
         {activeTab === "stats" && <StatsPanel />}
       </div>
