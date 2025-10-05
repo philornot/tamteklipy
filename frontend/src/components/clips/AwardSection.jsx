@@ -1,7 +1,7 @@
 import {useEffect, useState} from "react";
 import {Award, Loader, Trash2} from "lucide-react";
 import {useAuth} from "../../hooks/useAuth";
-import api from "../../services/api";
+import api, {getBaseURL} from "../../services/api";
 
 function AwardSection({clipId, initialAwards}) {
     const [awards, setAwards] = useState(initialAwards || []);
@@ -103,7 +103,7 @@ function AwardSection({clipId, initialAwards}) {
                     >
                         {/* Icon: image or emoji fallback */}
                         {award.icon_url ? (<img
-                            src={`${import.meta.env.VITE_API_URL}${award.icon_url}`}
+                            src={`${getBaseURL()}${award.icon_url}`}
                             alt={award.display_name}
                             className="w-8 h-8 rounded"
                             onError={(e) => {

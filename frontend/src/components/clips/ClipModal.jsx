@@ -8,7 +8,7 @@ import {
   Clock,
   ImageIcon,
 } from "lucide-react";
-import api from "../../services/api";
+import api, {getBaseURL} from "../../services/api";
 import AwardSection from "./AwardSection";
 
 function ClipModal({ clip, onClose }) {
@@ -38,10 +38,7 @@ function ClipModal({ clip, onClose }) {
   }, [fetchClipDetails, onClose]);
 
   const handleDownload = () => {
-    window.open(
-      `${import.meta.env.VITE_API_URL}/api/files/download/${clip.id}`,
-      "_blank"
-    );
+window.open(`${getBaseURL()}/api/files/download/${clip.id}`, "_blank");
   };
 
   const formatDate = (dateString) => {
@@ -91,17 +88,13 @@ function ClipModal({ clip, onClose }) {
                   controls
                   autoPlay
                   className="w-full rounded-lg bg-black"
-                  src={`${import.meta.env.VITE_API_URL}/api/files/stream/${
-                    clip.id
-                  }`}
+                  src={`${getBaseURL()}/api/files/stream/${clip.id}`}
                 >
-                  Twoja przeglądarka nie obsługuje video.
+                  Twoja przeglądarka nie obsługuje video. What a shame.
                 </video>
               ) : (
                 <img
-                  src={`${import.meta.env.VITE_API_URL}/api/files/download/${
-                    clip.id
-                  }`}
+                  src={`${getBaseURL()}/api/files/download/${clip.id}`}
                   alt={clip.filename}
                   className="w-full rounded-lg"
                 />

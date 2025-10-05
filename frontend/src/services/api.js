@@ -49,4 +49,10 @@ api.interceptors.response.use(
   }
 );
 
+export const getBaseURL = () => {
+  return import.meta.env.PROD
+    ? "https://www.tamteklipy.pl"
+    : "http://localhost:8000";
+};
+
 export default api;

@@ -1,14 +1,14 @@
 import {useState} from "react";
 import {Award, Calendar, Image, Play, User} from "lucide-react";
 import ClipModal from "./ClipModal";
+import api, { getBaseURL } from "../../services/api";
 
 function ClipCard({clip}) {
     const [showModal, setShowModal] = useState(false);
 
     const thumbnailUrl = clip.has_thumbnail
-        ? `${import.meta.env.VITE_API_URL}/api/files/thumbnails/${clip.id}`
+        ? `${getBaseURL()}/api/files/thumbnails/${clip.id}`
         : null;
-
     const formatDate = (dateString) => {
         return new Date(dateString).toLocaleDateString("pl-PL", {
             day: "2-digit",
