@@ -350,7 +350,7 @@ def print_summary(db):
             AwardType.is_personal == True
         ).first()
         personal_name = personal_award.display_name if personal_award else "brak"
-        logger.info(f"  {user.username:12} | Hasło: {user.username.capitalize()}123!{admin_badge}")
+        logger.info(f"  {user.username:12} | {admin_badge}")
         logger.info(f"               | Osobista nagroda: {personal_name}")
 
     logger.info("")
