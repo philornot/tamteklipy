@@ -6,6 +6,7 @@ import logging
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.core.exceptions import AuthenticationError, NotFoundError
+from app.core.exceptions import DuplicateError
 from app.core.security import hash_password
 from app.core.security import (
     verify_password,
@@ -98,9 +99,8 @@ async def register(
     Returns:
         UserResponse: Dane utworzonego użytkownika
     """
-    from app.core.exceptions import DuplicateError
 
-    # Sprawdź czy username już istnieje
+    # Sprawdź, czy username już istnieje
     existing_user = db.query(User).filter(
         User.username == user_data.username.lower()
     ).first()
@@ -129,21 +129,38 @@ async def register(
                 value=user_data.email
             )
 
-    # Utwórz nowego użytkownika
-    new_user = User(
-        username=user_data.username.lower(),
-        email=user_data.email,
-        hashed_password=hash_password(user_data.password) if user_data.password else None,
-        full_name=user_data.full_name,
-        is_active=user_data.is_active,
-        award_scopes=user_data.award_scopes or []
-    )
+        # Utwórz nowego użytkownika
+        new_user = User(
+            username=user_data.username.lower(),
+            email=user_data.email,
+            hashed_password=hash_password(user_data.password) if user_data.password else None,
+            full_name=user_data.full_name,
+            is_active=user_data.is_active,
+            award_scopes=user_data.award_scopes or []
+        )
 
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
+        db.add(new_user)
+        db.flush()  # Żeby new_user.id był dostępny
 
-    return new_user
+        # Utwórz imienną nagrodę dla nowego użytkownika
+        from app.models.award_type import AwardType
+        personal_award = AwardType(
+            name=f"award:personal_{new_user.username}",
+            display_name=f"Nagroda {new_user.username}",
+            description=f"Osobista nagroda użytkownika {new_user.username}",
+            icon="⭐",
+            color="#FFD700",
+            is_personal=True,
+            created_by_user_id=new_user.id
+        )
+        db.add(personal_award)
+
+        db.commit()
+        db.refresh(new_user)
+
+        logger.info(f"User registered: {new_user.username} with personal award")
+
+        return new_user
 
 
 # Endpoint zwracający aktualnego użytkownika na podstawie tokenu JWT

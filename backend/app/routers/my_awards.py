@@ -12,8 +12,8 @@ from app.models.award_type import AwardType
 from app.models.user import User
 from app.routers.admin import AwardTypeResponse
 from fastapi import APIRouter, Depends, status
-from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -158,7 +158,14 @@ async def delete_custom_award(
     if not award_type:
         raise NotFoundError(resource="Custom AwardType", resource_id=award_type_id)
 
-    # Sprawdź czy używana
+    # BLOKADA — nie można usunąć personal award
+    if award_type.is_personal:
+        raise ValidationError(
+            message="Nie można usunąć imiennej nagrody - jest niezbywalna",
+            field="is_personal"
+        )
+
+    # Sprawdź, czy używana
     usage_count = db.query(Award).filter(Award.award_name == award_type.name).count()
 
     if usage_count > 0:
@@ -171,8 +178,8 @@ async def delete_custom_award(
         return None
 
     # Hard delete - usuń z bazy i plik
-    if award_type.icon_path:
-        icon_path = Path(award_type.icon_path)
+    if award_type.custom_icon_path:
+        icon_path = Path(award_type.custom_icon_path)
         if icon_path.exists():
             try:
                 icon_path.unlink()
