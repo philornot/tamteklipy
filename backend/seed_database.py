@@ -58,7 +58,7 @@ def seed_users(db):
         {
             "username": "philornot",
             "email": None,
-            "password": "HasloFilipa",
+            "password": "",
             "full_name": "Filip",
             "is_admin": True,
             "award_scopes": []
