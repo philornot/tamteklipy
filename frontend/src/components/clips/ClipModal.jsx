@@ -1,5 +1,12 @@
 import { useEffect, useState, useCallback } from "react";
-import { X, Download, User, Calendar, Clock, ImageIcon } from "lucide-react";
+import {
+  X,
+  Download,
+  User,
+  Calendar,
+  Clock,
+  ImageIcon,
+} from "lucide-react";
 import api from "../../services/api";
 import AwardSection from "./AwardSection";
 import { getStreamUrl, getDownloadUrl } from "../../utils/urlHelper";
@@ -37,6 +44,16 @@ function ClipModal({ clip, onClose }) {
     window.open(downloadUrl, "_blank");
   };
 
+  const handleAwardsChange = (newAwards) => {
+    // Update clipDetails with new awards
+    if (clipDetails) {
+      setClipDetails({
+        ...clipDetails,
+        awards: newAwards
+      });
+    }
+  };
+
   const formatDate = (dateString) => {
     return new Date(dateString).toLocaleString("pl-PL", {
       day: "2-digit",
@@ -54,10 +71,9 @@ function ClipModal({ clip, onClose }) {
   };
 
   // Pobierz URL do media
-  const mediaUrl =
-    clip.clip_type === "video"
-      ? getStreamUrl(clip.id)
-      : getDownloadUrl(clip.id);
+  const mediaUrl = clip.clip_type === "video"
+    ? getStreamUrl(clip.id)
+    : getDownloadUrl(clip.id);
 
   return (
     <div
@@ -147,7 +163,7 @@ function ClipModal({ clip, onClose }) {
               {/* Download button */}
               <button
                 onClick={handleDownload}
-                className="mt-4 btn-primary w-full flex items-center justify-center gap-2"
+                className="mt-4 w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors flex items-center justify-center gap-2"
               >
                 <Download size={20} />
                 Pobierz ({clip.file_size_mb.toFixed(1)} MB)
@@ -162,6 +178,7 @@ function ClipModal({ clip, onClose }) {
                 <AwardSection
                   clipId={clip.id}
                   initialAwards={clipDetails.awards}
+                  onAwardsChange={handleAwardsChange}
                 />
               ) : (
                 <div className="text-red-400">
