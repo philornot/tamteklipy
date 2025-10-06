@@ -1,13 +1,12 @@
 import axios from "axios";
 
-// Sprawdź czy jest produkcja (po zbudowaniu import.meta.env.PROD będzie true)
-const API_BASE_URL = import.meta.env.PROD
-  ? "https://www.tamteklipy.pl"  // Produkcja - twarda wartość
-  : "http://localhost:8000";      // Development
+const API_BASE_URL =
+  import.meta.env.VITE_API_URL ||
+  (import.meta.env.PROD ? "" : "http://localhost:8000");
 
 const api = axios.create({
   baseURL: `${API_BASE_URL}/api`,
-  timeout: 10000,
+  timeout: 30000,
   headers: {
     "Content-Type": "application/json",
   },
@@ -32,7 +31,9 @@ api.interceptors.response.use(
     if (error.response?.status === 401) {
       const reqUrl = error.config?.url || "";
       const isLoginRequest = reqUrl.includes("/auth/login");
-      const onLoginPage = typeof window !== "undefined" && window.location?.pathname?.startsWith("/login");
+      const onLoginPage =
+        typeof window !== "undefined" &&
+        window.location?.pathname?.startsWith("/login");
 
       // Wyczyść tokeny (zawsze przy 401)
       localStorage.removeItem("access_token");
@@ -48,11 +49,5 @@ api.interceptors.response.use(
     return Promise.reject(error);
   }
 );
-
-export const getBaseURL = () => {
-  return import.meta.env.PROD
-    ? "https://www.tamteklipy.pl"
-    : "http://localhost:8000";
-};
 
 export default api;

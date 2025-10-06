@@ -1,7 +1,8 @@
 """
 Konfiguracja aplikacji - zmienne środowiskowe
 """
-from typing import List
+import os
+from typing import List, ClassVar
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -35,6 +36,29 @@ class Settings(BaseSettings):
     max_video_size_mb: int = 500
     max_image_size_mb: int = 10
 
+    # CORS
+    allowed_origins: str = (
+        "http://localhost:5173,http://localhost:3000,"
+        "http://localhost:8000,https://localhost:8001"
+    )
+
+    # Email (opcjonalnie)
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+
+    # To jest zmienna klasowa (nie pole Pydantic)
+    _env: ClassVar[str] = os.getenv("ENVIRONMENT", "development")
+    _env_file: ClassVar[str] = f".env.{_env}"
+
+    model_config = SettingsConfigDict(
+        env_file=_env_file,
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+    )
+
+    # --- Własne property ---
     @property
     def max_video_size_bytes(self) -> int:
         return self.max_video_size_mb * 1024 * 1024
@@ -43,25 +67,10 @@ class Settings(BaseSettings):
     def max_image_size_bytes(self) -> int:
         return self.max_image_size_mb * 1024 * 1024
 
-    # CORS
-    allowed_origins: str = "http://localhost:5173,http://localhost:3000"
-
-    # Email (opcjonalnie)
-    smtp_host: str = ""
-    smtp_port: int = 587
-    smtp_user: str = ""
-    smtp_password: str = ""
-
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        case_sensitive=False
-    )
-
     @property
     def origins_list(self) -> List[str]:
         """Zwraca listę dozwolonych origins dla CORS"""
-        return [origin.strip() for origin in self.allowed_origins.split(",")]
+        return [origin.strip() for origin in self.allowed_origins.split(",") if origin.strip()]
 
 
 # Singleton - jedna instancja dla całej aplikacji

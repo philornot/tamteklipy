@@ -2,14 +2,14 @@ import { useEffect, useState, useCallback } from "react";
 import {
   X,
   Download,
-  Award,
   User,
   Calendar,
   Clock,
   ImageIcon,
 } from "lucide-react";
-import api, {getBaseURL} from "../../services/api";
+import api from "../../services/api";
 import AwardSection from "./AwardSection";
+import { getStreamUrl, getDownloadUrl } from "../../utils/urlHelper";
 
 function ClipModal({ clip, onClose }) {
   const [clipDetails, setClipDetails] = useState(null);
@@ -38,7 +38,9 @@ function ClipModal({ clip, onClose }) {
   }, [fetchClipDetails, onClose]);
 
   const handleDownload = () => {
-window.open(`${getBaseURL()}/api/files/download/${clip.id}`, "_blank");
+    const downloadUrl = getDownloadUrl(clip.id);
+    console.log("Downloading from:", downloadUrl);
+    window.open(downloadUrl, "_blank");
   };
 
   const formatDate = (dateString) => {
@@ -56,6 +58,11 @@ window.open(`${getBaseURL()}/api/files/download/${clip.id}`, "_blank");
     const secs = seconds % 60;
     return `${mins}:${String(secs).padStart(2, "0")}`;
   };
+
+  // Pobierz URL do media
+  const mediaUrl = clip.clip_type === "video"
+    ? getStreamUrl(clip.id)
+    : getDownloadUrl(clip.id);
 
   return (
     <div
@@ -88,15 +95,23 @@ window.open(`${getBaseURL()}/api/files/download/${clip.id}`, "_blank");
                   controls
                   autoPlay
                   className="w-full rounded-lg bg-black"
-                  src={`${getBaseURL()}/api/files/stream/${clip.id}`}
+                  src={mediaUrl}
+                  onError={(e) => {
+                    console.error("Video load error:", e);
+                    console.error("Attempted URL:", mediaUrl);
+                  }}
                 >
-                  Twoja przeglądarka nie obsługuje video. What a shame.
+                  Twoja przeglądarka nie obsługuje video.
                 </video>
               ) : (
                 <img
-                  src={`${getBaseURL()}/api/files/download/${clip.id}`}
+                  src={mediaUrl}
                   alt={clip.filename}
                   className="w-full rounded-lg"
+                  onError={(e) => {
+                    console.error("Image load error:", e);
+                    console.error("Attempted URL:", mediaUrl);
+                  }}
                 />
               )}
 

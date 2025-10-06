@@ -1,3 +1,7 @@
+/**
+ * Skeleton loader pokazywany podczas ładowania klipów
+ * Używa animate-pulse z Tailwind do animacji "pulsowania"
+ */
 function ClipCardSkeleton() {
   return (
     <div className="bg-gray-800 rounded-lg overflow-hidden border border-gray-700 animate-pulse">

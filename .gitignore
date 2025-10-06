@@ -20,6 +20,8 @@ build/
 # Environment variables
 backend/.env
 .env.local
+.env.development
+.env.production
 
 # IDE
 .vscode/
