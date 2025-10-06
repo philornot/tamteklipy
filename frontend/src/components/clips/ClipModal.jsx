@@ -1,12 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import {
-  X,
-  Download,
-  User,
-  Calendar,
-  Clock,
-  ImageIcon,
-} from "lucide-react";
+import { X, Download, User, Calendar, Clock, ImageIcon } from "lucide-react";
 import api from "../../services/api";
 import AwardSection from "./AwardSection";
 import { getStreamUrl, getDownloadUrl } from "../../utils/urlHelper";
@@ -37,17 +30,12 @@ function ClipModal({ clip, onClose }) {
     return () => window.removeEventListener("keydown", handleEsc);
   }, [fetchClipDetails, onClose]);
 
-    const handleDownload = () => {
-      // Pobierz token z localStorage
-      const token = localStorage.getItem("access_token");
-
-      // Dodaj token do URL jako query param
-      const downloadUrl = getDownloadUrl(clip.id);
-      const urlWithToken = token ? `${downloadUrl}?token=${token}` : downloadUrl;
-
-      console.log("Downloading from:", urlWithToken);
-      window.open(urlWithToken, "_blank");
-    };
+  const handleDownload = () => {
+    // getDownloadUrl już dodaje token automatycznie
+    const downloadUrl = getDownloadUrl(clip.id);
+    console.log("Downloading from:", downloadUrl);
+    window.open(downloadUrl, "_blank");
+  };
 
   const formatDate = (dateString) => {
     return new Date(dateString).toLocaleString("pl-PL", {
@@ -66,9 +54,10 @@ function ClipModal({ clip, onClose }) {
   };
 
   // Pobierz URL do media
-  const mediaUrl = clip.clip_type === "video"
-    ? getStreamUrl(clip.id)
-    : getDownloadUrl(clip.id);
+  const mediaUrl =
+    clip.clip_type === "video"
+      ? getStreamUrl(clip.id)
+      : getDownloadUrl(clip.id);
 
   return (
     <div

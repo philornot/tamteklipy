@@ -1,15 +1,18 @@
 """
 FastAPI dependencies — funkcje pomocnicze używane jako Depends()
 """
-from typing import List
+from typing import List, Optional
 
 from app.core.database import get_db
 from app.core.exceptions import AuthorizationError
 from app.core.exceptions import NotFoundError, AuthenticationError
-from app.core.security import get_current_user_from_token
+from app.core.security import get_current_user_from_token, verify_token
 from app.models.user import User
-from fastapi import Depends
+from fastapi import Depends, Query
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
+
+security = HTTPBearer(auto_error=False)
 
 
 async def get_current_user(
@@ -41,6 +44,60 @@ async def get_current_user(
 
     if not user:
         raise NotFoundError(resource="Użytkownik", resource_id=user_id)
+
+    if not user.is_active:
+        raise AuthenticationError(message="Konto jest nieaktywne")
+
+    return user
+
+
+async def get_current_user_flexible(
+        credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+        token: Optional[str] = Query(None, description="JWT token as query param"),
+        db: Session = Depends(get_db)
+) -> User:
+    """
+    Pobiera użytkownika z JWT tokena z headera LUB query param
+    Używane dla endpointów gdzie trzeba otworzyć w nowym oknie (download, stream, thumbnails)
+
+    Args:
+        credentials: Bearer token z header (preferowane)
+        token: Token z query param (fallback dla window.open)
+        db: Sesja bazy danych
+
+    Returns:
+        User: Obiekt użytkownika
+
+    Raises:
+        AuthenticationError: Jeśli brak tokenu lub token nieprawidłowy
+    """
+    # Spróbuj header (preferowane)
+    jwt_token = None
+    if credentials:
+        jwt_token = credentials.credentials
+    # Fallback na query param
+    elif token:
+        jwt_token = token
+
+    if not jwt_token:
+        raise AuthenticationError(
+            message="Brak tokenu autoryzacji",
+            details={"hint": "Wymagany Bearer token w header lub ?token= w URL"}
+        )
+
+    # Verify token
+    payload = verify_token(jwt_token)
+    if not payload:
+        raise AuthenticationError(message="Nieprawidłowy token")
+
+    user_id = payload.get("user_id")
+    if not user_id:
+        raise AuthenticationError(message="Invalid token payload")
+
+    # Pobierz użytkownika
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise AuthenticationError(message="User not found")
 
     if not user.is_active:
         raise AuthenticationError(message="Konto jest nieaktywne")
@@ -140,53 +197,3 @@ def require_all_scopes(required_scopes: List[str]):
         return user
 
     return verify_all_scopes
-
-
-from typing import Optional
-from fastapi import Query
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-
-security = HTTPBearer(auto_error=False)
-
-
-async def get_current_user_flexible(
-        credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
-        token: Optional[str] = Query(None, description="JWT token as query param"),
-        db: Session = Depends(get_db)
-) -> User:
-    """
-    Pobiera użytkownika z JWT tokena z headera LUB query param
-    Używane dla endpointów gdzie trzeba otworzyć w nowym oknie (download, iframe)
-    """
-    from app.core.security import verify_token
-    from app.core.exceptions import AuthenticationError
-
-    # Spróbuj header (preferowane)
-    jwt_token = None
-    if credentials:
-        jwt_token = credentials.credentials
-    # Fallback na query param
-    elif token:
-        jwt_token = token
-
-    if not jwt_token:
-        raise AuthenticationError(
-            message="Brak tokenu autoryzacji",
-            details={"hint": "Wymagany Bearer token w header lub ?token= w URL"}
-        )
-
-    # Verify token
-    payload = verify_token(jwt_token)
-    if not payload:
-        raise AuthenticationError(message="Nieprawidłowy token")
-
-    username = payload.get("sub")
-    if not username:
-        raise AuthenticationError(message="Invalid token payload")
-
-    # Pobierz użytkownika
-    user = db.query(User).filter(User.username == username).first()
-    if not user:
-        raise AuthenticationError(message="User not found")
-
-    return user

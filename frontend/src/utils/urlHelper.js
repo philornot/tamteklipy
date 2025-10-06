@@ -9,25 +9,36 @@ const getBaseUrl = () => {
 
 const getApiUrl = (path) => {
   const base = getBaseUrl();
-  const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  const cleanPath = path.startsWith("/") ? path : `/${path}`;
   return `${base}${cleanPath}`;
+};
+
+// Helper do dodawania tokenu do URL
+const addTokenToUrl = (url) => {
+  const token = localStorage.getItem("access_token");
+  if (!token) return url;
+
+  const separator = url.includes("?") ? "&" : "?";
+  return `${url}${separator}token=${token}`;
 };
 
 // Konkretne helpery dla plików
 const getThumbnailUrl = (clipId) => {
-  return getApiUrl(`/api/files/thumbnails/${clipId}`);
+  const url = getApiUrl(`/api/files/thumbnails/${clipId}`);
+  return addTokenToUrl(url);
 };
 
 const getStreamUrl = (clipId) => {
-  return getApiUrl(`/api/files/stream/${clipId}`);
+  const url = getApiUrl(`/api/files/stream/${clipId}`);
+  return addTokenToUrl(url);
 };
 
 const getDownloadUrl = (clipId) => {
-  return getApiUrl(`/api/files/download/${clipId}`);
+  const url = getApiUrl(`/api/files/download/${clipId}`);
+  return addTokenToUrl(url);
 };
 
 const getAwardIconUrl = (iconPath) => {
-  // iconPath już zawiera pełną ścieżkę np. /api/admin/award-types/{id}/icon
   return getApiUrl(iconPath);
 };
 

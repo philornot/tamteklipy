@@ -543,10 +543,7 @@ async def download_clip(
 
     GET /api/files/download/{clip_id}
     GET /api/files/download/{clip_id}?token=xxx (dla window.open)
-
-    Zwraca plik z odpowiednimi headerami Content-Type i Content-Disposition
     """
-    # Znajdź klip w bazie
     clip = db.query(Clip).filter(
         Clip.id == clip_id,
         Clip.is_deleted == False
@@ -555,15 +552,12 @@ async def download_clip(
     if not clip:
         raise NotFoundError(resource="Klip", resource_id=clip_id)
 
-    # Sprawdź uprawnienia
     if not can_access_clip(clip, current_user):
         raise AuthorizationError(
             message="Nie masz uprawnień do pobrania tego pliku"
         )
 
-    # Sprawdź czy plik istnieje
     file_path = Path(clip.file_path)
-
     if not file_path.exists():
         logger.error(f"File not found on disk: {file_path}")
         raise StorageError(
@@ -571,13 +565,8 @@ async def download_clip(
             path=str(file_path)
         )
 
-    # Określ MIME type
-    if clip.clip_type == ClipType.VIDEO:
-        media_type = "video/mp4"
-    else:
-        media_type = "image/png"
+    media_type = "video/mp4" if clip.clip_type == ClipType.VIDEO else "image/png"
 
-    # Zwróć plik z proper headers
     return FileResponse(
         path=str(file_path),
         media_type=media_type,
@@ -587,7 +576,6 @@ async def download_clip(
             "Accept-Ranges": "bytes"
         }
     )
-
 
 class BulkDownloadRequest(BaseModel):
     """Request body dla bulk download"""
@@ -729,10 +717,14 @@ async def download_bulk(
 @router.get("/thumbnails/{clip_id}")
 async def get_thumbnail(
         clip_id: int,
-        db: Session = Depends(get_db)
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user_flexible)
 ):
     """
-    Pobierz miniaturę klipa (PUBLIC — bez auth)
+    Pobierz miniaturę klipa
+
+    GET /api/files/thumbnails/{clip_id}
+    GET /api/files/thumbnails/{clip_id}?token=xxx (dla <img> tag)
     """
     clip = db.query(Clip).filter(
         Clip.id == clip_id,
@@ -767,12 +759,15 @@ async def get_thumbnail(
 async def stream_video(
         clip_id: int,
         request: Request,
-        db: Session = Depends(get_db)
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user_flexible)
 ):
     """
-    Stream video z obsługą Range requests (PUBLIC - bez auth dla <video> tag)
+    Stream video z obsługą Range requests
+
+    GET /api/files/stream/{clip_id}
+    GET /api/files/stream/{clip_id}?token=xxx (dla <video> tag)
     """
-    # Znajdź klip
     clip = db.query(Clip).filter(
         Clip.id == clip_id,
         Clip.is_deleted == False,
@@ -791,12 +786,9 @@ async def stream_video(
         )
 
     file_size = file_path.stat().st_size
-
-    # Sprawdź czy request ma header Range
     range_header = request.headers.get("range")
 
     if not range_header:
-        # Brak Range header - zwróć cały plik
         return FileResponse(
             path=str(file_path),
             media_type="video/mp4",
@@ -806,7 +798,6 @@ async def stream_video(
             }
         )
 
-    # Parse Range header: "bytes=0-1024"
     try:
         range_str = range_header.replace("bytes=", "")
         start_str, end_str = range_str.split("-")
@@ -814,7 +805,6 @@ async def stream_video(
         start = int(start_str) if start_str else 0
         end = int(end_str) if end_str else file_size - 1
 
-        # Waliduj range
         if start >= file_size or end >= file_size or start > end:
             raise ValueError("Invalid range")
 
@@ -827,14 +817,13 @@ async def stream_video(
             details={"range": range_header}
         )
 
-    # Funkcja generatora dla streaming
     async def file_iterator():
         async with aiofiles.open(file_path, mode='rb') as f:
             await f.seek(start)
             remaining = chunk_size
 
             while remaining > 0:
-                read_size = min(8192, remaining)  # 8KB chunks
+                read_size = min(8192, remaining)
                 data = await f.read(read_size)
 
                 if not data:
@@ -843,10 +832,9 @@ async def stream_video(
                 remaining -= len(data)
                 yield data
 
-    # Zwróć partial content response (206)
     return StreamingResponse(
         file_iterator(),
-        status_code=206,  # Partial Content
+        status_code=206,
         media_type="video/mp4",
         headers={
             "Content-Range": f"bytes {start}-{end}/{file_size}",
