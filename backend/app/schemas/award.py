@@ -24,6 +24,8 @@ class AwardResponse(BaseModel):
     user_id: int
     username: str
     award_name: str
+    award_display_name: str = ""  # ← DODAJ TO
+    award_icon: str = "🏆"  # ← DODAJ TO (opcjonalnie)
     awarded_at: datetime
 
     class Config:

@@ -235,6 +235,8 @@ async def give_award_to_clip(
         user_id=new_award.user_id,
         username=current_user.username,
         award_name=new_award.award_name,
+        award_display_name=award_type.display_name,
+        award_icon=award_type.icon,
         awarded_at=new_award.awarded_at
     )
 

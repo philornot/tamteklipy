@@ -206,9 +206,11 @@ function AwardSection({ clipId, initialAwards, onAwardsChange }) {
                     {renderAwardIcon(award, "6")}
                   </div>
                   <div>
-                    <div className="text-sm font-medium">{award.username}</div>
+                    <div className="text-sm font-medium">
+                      {award.award_display_name || award.award_name}
+                    </div>
                     <div className="text-xs text-gray-400">
-                      {new Date(award.awarded_at).toLocaleString("pl-PL")}
+                      od {award.username} • {new Date(award.awarded_at).toLocaleString("pl-PL")}
                     </div>
                   </div>
                 </div>

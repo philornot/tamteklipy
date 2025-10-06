@@ -437,12 +437,16 @@ async def list_clips(
         award_icons = []
         for award_name, count in award_counts.items():
             award_type = award_types_map.get(award_name)
-            icon_url = f"/api/admin/award-types/{award_type.id}/icon" if (award_type and award_type.icon_path) else None
+
+            # FIX: Sprawdź custom_icon_path zamiast icon_path
+            icon_url = f"/api/admin/award-types/{award_type.id}/icon" if (
+                        award_type and award_type.custom_icon_path) else None
 
             award_icons.append({
                 "award_name": award_name,
                 "icon_url": icon_url,
                 "icon": award_type.icon if award_type else "🏆",
+                "lucide_icon": award_type.lucide_icon if award_type else None,  # DODAJ TO
                 "count": count
             })
 
@@ -461,7 +465,7 @@ async def list_clips(
                 uploader_id=clip.uploader_id,
                 award_count=clip.award_count,
                 has_thumbnail=clip.thumbnail_path is not None,
-                award_icons=award_icons  # NEW
+                award_icons=award_icons
             )
         )
 
