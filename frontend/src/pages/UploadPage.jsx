@@ -7,63 +7,71 @@ import {
   Image as ImageIcon,
   Loader,
   CheckCircle,
+  AlertCircle,
 } from "lucide-react";
 import api from "../services/api";
 import toast from "react-hot-toast";
 
+const MAX_VIDEO_SIZE = 500 * 1024 * 1024; // 500MB
+const MAX_IMAGE_SIZE = 100 * 1024 * 1024; // 100MB
+const ALLOWED_VIDEO = ["video/mp4", "video/webm", "video/quicktime"];
+const ALLOWED_IMAGE = ["image/png", "image/jpeg", "image/jpg"];
+
 function UploadPage() {
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [uploading, setUploading] = useState(false);
-  const [uploadResults, setUploadResults] = useState([]);
   const [dragActive, setDragActive] = useState(false);
   const navigate = useNavigate();
 
-  const MAX_VIDEO_SIZE = 500 * 1024 * 1024;
-  const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
-  const ALLOWED_VIDEO = ["video/mp4", "video/webm", "video/quicktime"];
-  const ALLOWED_IMAGE = ["image/png", "image/jpeg", "image/jpg"];
-
   const validateAndAddFiles = (files) => {
     const fileArray = Array.from(files);
+    const validFiles = [];
 
-    const validFiles = fileArray.filter((file) => {
+    for (const file of fileArray) {
       const isVideo = ALLOWED_VIDEO.includes(file.type);
       const isImage = ALLOWED_IMAGE.includes(file.type);
 
+      // Sprawdź format
       if (!isVideo && !isImage) {
-        alert(`${file.name}: Niedozwolony format`);
-        return false;
+        toast.error(`${file.name}: Niedozwolony format pliku`);
+        continue;
       }
 
+      // Sprawdź rozmiar
       const maxSize = isVideo ? MAX_VIDEO_SIZE : MAX_IMAGE_SIZE;
       if (file.size > maxSize) {
-        const maxMB = maxSize / (1024 * 1024);
-        alert(`${file.name}: Plik za duży (max ${maxMB}MB)`);
-        return false;
+        const maxMB = Math.round(maxSize / (1024 * 1024));
+        toast.error(`${file.name}: Plik za duży (max ${maxMB}MB)`);
+        continue;
       }
 
-      return true;
-    });
+      validFiles.push({
+        file,
+        preview: URL.createObjectURL(file),
+        type: isVideo ? "video" : "image",
+        status: "pending",
+        progress: 0,
+        error: null,
+      });
+    }
 
-    const filesWithPreviews = validFiles.map((file) => ({
-      file,
-      preview: URL.createObjectURL(file),
-      type: ALLOWED_VIDEO.includes(file.type) ? "video" : "image",
-      status: "pending",
-      progress: 0,
-    }));
-
-    setSelectedFiles((prev) => [...prev, ...filesWithPreviews]);
+    if (validFiles.length > 0) {
+      setSelectedFiles((prev) => [...prev, ...validFiles]);
+      toast.success(`Dodano ${validFiles.length} plików`);
+    }
   };
 
   const handleFileSelect = (e) => {
-    validateAndAddFiles(e.target.files);
+    if (e.target.files && e.target.files.length > 0) {
+      validateAndAddFiles(e.target.files);
+      e.target.value = ""; // Reset input
+    }
   };
 
-  // TK-373: onDragOver, onDrop handlers
   const handleDrag = (e) => {
     e.preventDefault();
     e.stopPropagation();
+
     if (e.type === "dragenter" || e.type === "dragover") {
       setDragActive(true);
     } else if (e.type === "dragleave") {
@@ -82,95 +90,93 @@ function UploadPage() {
   };
 
   const removeFile = (index) => {
-    const newFiles = [...selectedFiles];
-    URL.revokeObjectURL(newFiles[index].preview);
-    newFiles.splice(index, 1);
-    setSelectedFiles(newFiles);
+    setSelectedFiles((prev) => {
+      const newFiles = [...prev];
+      URL.revokeObjectURL(newFiles[index].preview);
+      newFiles.splice(index, 1);
+      return newFiles;
+    });
   };
 
-  // Fragment do podmian w handleUpload:
+  const handleUpload = async () => {
+    if (selectedFiles.length === 0) return;
 
-const handleUpload = async () => {
-  if (selectedFiles.length === 0) return;
+    setUploading(true);
+    let successCount = 0;
+    let errorCount = 0;
 
-  setUploading(true);
-  const results = [];
+    for (let i = 0; i < selectedFiles.length; i++) {
+      const fileObj = selectedFiles[i];
 
-  for (let i = 0; i < selectedFiles.length; i++) {
-    const fileObj = selectedFiles[i];
+      // Skip already uploaded or failed files
+      if (fileObj.status !== "pending") continue;
 
-    try {
-      const formData = new FormData();
-      formData.append("file", fileObj.file);
+      try {
+        const formData = new FormData();
+        formData.append("file", fileObj.file);
 
-      const response = await api.post("/files/upload", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-        onUploadProgress: (progressEvent) => {
-          const percentCompleted = Math.round(
-            (progressEvent.loaded * 100) / progressEvent.total
-          );
-          setSelectedFiles((prev) =>
-            prev.map((f, idx) =>
-              idx === i ? { ...f, progress: percentCompleted } : f
-            )
-          );
-        },
-      });
+        const response = await api.post("/files/upload", formData, {
+          headers: { "Content-Type": "multipart/form-data" },
+          onUploadProgress: (progressEvent) => {
+            if (progressEvent.total) {
+              const percentCompleted = Math.round(
+                (progressEvent.loaded * 100) / progressEvent.total
+              );
 
-      // ✅ Backend zwraca obiekt z message, nie success
-      const filename = response.data.filename || fileObj.file.name;
-      toast.success(`${filename} przesłany!`);
+              setSelectedFiles((prev) =>
+                prev.map((f, idx) =>
+                  idx === i ? { ...f, progress: percentCompleted } : f
+                )
+              );
+            }
+          },
+        });
 
-      results.push({
-        filename: fileObj.file.name,
-        success: true,  // Status 200 = sukces
-        message: response.data.message || "Uploaded successfully",
-        data: response.data,
-      });
+        // SUCCESS - status 200/201
+        console.log("Upload success:", response.data);
 
-      setSelectedFiles((prev) =>
-        prev.map((f, idx) =>
-          idx === i ? { ...f, status: "success", progress: 100 } : f
-        )
-      );
-    } catch (error) {
-      console.error("Upload error:", error);
+        setSelectedFiles((prev) =>
+          prev.map((f, idx) =>
+            idx === i ? { ...f, status: "success", progress: 100 } : f
+          )
+        );
 
-      const errorMessage = error.response?.data?.message ||
-                          error.response?.data?.detail ||
-                          "Upload failed";
+        successCount++;
+        toast.success(`${fileObj.file.name} - przesłano!`);
+      } catch (error) {
+        // ERROR
+        console.error("Upload error:", error);
 
-      toast.error(`${fileObj.file.name}: ${errorMessage}`);
+        const errorMessage =
+          error.response?.data?.detail ||
+          error.response?.data?.message ||
+          error.message ||
+          "Nieznany błąd";
 
-      results.push({
-        filename: fileObj.file.name,
-        success: false,
-        message: errorMessage,
-      });
+        setSelectedFiles((prev) =>
+          prev.map((f, idx) =>
+            idx === i
+              ? { ...f, status: "error", error: errorMessage, progress: 0 }
+              : f
+          )
+        );
 
-      setSelectedFiles((prev) =>
-        prev.map((f, idx) =>
-          idx === i
-            ? { ...f, status: "error", error: errorMessage }
-            : f
-        )
-      );
+        errorCount++;
+        toast.error(`${fileObj.file.name} - błąd: ${errorMessage}`);
+      }
     }
-  }
 
-  setUploadResults(results);
-  setUploading(false);
+    setUploading(false);
 
-  const allSuccess = results.every((r) => r.success);
-  if (allSuccess) {
-    setTimeout(() => navigate("/dashboard"), 2000);
-  }
-};
-
-  // TK-380: Cancel upload
-  const cancelUpload = (index) => {
-    // Simple implementation - just remove from list
-    removeFile(index);
+    // Podsumowanie
+    if (successCount > 0 && errorCount === 0) {
+      toast.success(`Wszystkie pliki przesłane (${successCount})`);
+      setTimeout(() => navigate("/dashboard"), 1500);
+    } else if (successCount > 0 && errorCount > 0) {
+      toast(`Sukces: ${successCount}, Błędy: ${errorCount}`, {
+        icon: "⚠️",
+      });
+    }
   };
 
   const formatFileSize = (bytes) => {
@@ -178,21 +184,29 @@ const handleUpload = async () => {
     return mb < 1 ? `${(bytes / 1024).toFixed(0)} KB` : `${mb.toFixed(1)} MB`;
   };
 
+  const pendingFiles = selectedFiles.filter(
+    (f) => f.status === "pending"
+  ).length;
+  const successFiles = selectedFiles.filter(
+    (f) => f.status === "success"
+  ).length;
+  const errorFiles = selectedFiles.filter((f) => f.status === "error").length;
+
   return (
     <div className="container mx-auto px-4 py-8 max-w-4xl">
-      <h1 className="text-3xl font-bold mb-6">Upload Plików</h1>
-
-      {/* TK-372: Drag & Drop Area */}
       <div className="mb-6">
-        <label className="block mb-2 text-gray-300">
-          Wybierz pliki lub przeciągnij tutaj
-        </label>
+        <h1 className="text-3xl font-bold mb-2">Upload Plików</h1>
+        <p className="text-gray-400">Prześlij klipy video lub screenshoty</p>
+      </div>
+
+      {/* Drag & Drop Area */}
+      <div className="mb-6">
         <div
-          className={`border-2 border-dashed rounded-lg p-8 text-center transition ${
+          className={`border-2 border-dashed rounded-lg p-12 text-center transition-colors ${
             dragActive
               ? "border-blue-500 bg-blue-500/10"
-              : "border-gray-600 hover:border-blue-500"
-          }`}
+              : "border-gray-600 hover:border-gray-500"
+          } ${uploading ? "opacity-50 pointer-events-none" : ""}`}
           onDragEnter={handleDrag}
           onDragLeave={handleDrag}
           onDragOver={handleDrag}
@@ -207,35 +221,84 @@ const handleUpload = async () => {
             className="hidden"
             id="file-input"
           />
-          <label htmlFor="file-input" className="cursor-pointer">
-            <Upload size={48} className="mx-auto mb-4 text-gray-400" />
-            <p className="text-gray-400 mb-2">
+
+          <label htmlFor="file-input" className="cursor-pointer block">
+            <Upload size={64} className="mx-auto mb-4 text-gray-500" />
+
+            <p className="text-lg mb-2 text-gray-300">
               {dragActive
                 ? "Upuść pliki tutaj"
                 : "Kliknij lub przeciągnij pliki"}
             </p>
-            <p className="text-sm text-gray-500">
-              Video: MP4, WebM, MOV (max 500MB) | Obrazy: PNG, JPG (max 10MB)
-            </p>
+
+            <div className="text-sm text-gray-500 space-y-1">
+              <p>Video: MP4, WebM, MOV (max 500MB)</p>
+              <p>Obrazy: PNG, JPG (max 10MB)</p>
+            </div>
           </label>
         </div>
       </div>
 
-      {/* Selected Files Preview */}
+      {/* Files List */}
       {selectedFiles.length > 0 && (
         <div className="mb-6">
-          <h2 className="text-xl font-semibold mb-4">
-            Wybrane pliki ({selectedFiles.length})
-          </h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold">
+              Pliki ({selectedFiles.length})
+            </h2>
+
+            {!uploading && (
+              <button
+                onClick={() => {
+                  selectedFiles.forEach((f) => URL.revokeObjectURL(f.preview));
+                  setSelectedFiles([]);
+                  toast.success("Wyczyszczono listę");
+                }}
+                className="text-sm text-gray-400 hover:text-white transition"
+              >
+                Wyczyść wszystko
+              </button>
+            )}
+          </div>
+
+          {/* Status Summary */}
+          {(successFiles > 0 || errorFiles > 0) && (
+            <div className="flex gap-4 mb-4 text-sm">
+              {successFiles > 0 && (
+                <div className="flex items-center gap-2 text-green-400">
+                  <CheckCircle size={16} />
+                  <span>Sukces: {successFiles}</span>
+                </div>
+              )}
+              {errorFiles > 0 && (
+                <div className="flex items-center gap-2 text-red-400">
+                  <AlertCircle size={16} />
+                  <span>Błędy: {errorFiles}</span>
+                </div>
+              )}
+              {pendingFiles > 0 && (
+                <div className="flex items-center gap-2 text-gray-400">
+                  <span>Oczekuje: {pendingFiles}</span>
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="space-y-3">
             {selectedFiles.map((fileObj, index) => (
               <div
                 key={index}
-                className="bg-gray-800 rounded-lg p-4 border border-gray-700"
+                className={`bg-gray-800 rounded-lg p-4 border transition-colors ${
+                  fileObj.status === "success"
+                    ? "border-green-700"
+                    : fileObj.status === "error"
+                    ? "border-red-700"
+                    : "border-gray-700"
+                }`}
               >
-                <div className="flex items-center gap-4 mb-2">
+                <div className="flex items-center gap-4">
                   {/* Preview */}
-                  <div className="w-24 h-24 bg-gray-900 rounded flex-shrink-0 overflow-hidden">
+                  <div className="w-20 h-20 bg-gray-900 rounded flex-shrink-0 overflow-hidden">
                     {fileObj.type === "video" ? (
                       <video
                         src={fileObj.preview}
@@ -254,67 +317,69 @@ const handleUpload = async () => {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
                       {fileObj.type === "video" ? (
-                        <FileVideo size={16} />
+                        <FileVideo size={16} className="text-blue-400" />
                       ) : (
-                        <ImageIcon size={16} />
+                        <ImageIcon size={16} className="text-green-400" />
                       )}
                       <span className="font-medium truncate">
                         {fileObj.file.name}
                       </span>
                     </div>
-                    <p className="text-sm text-gray-400">
-                      {formatFileSize(fileObj.file.size)} • {fileObj.type}
+
+                    <p className="text-sm text-gray-400 mb-2">
+                      {formatFileSize(fileObj.file.size)}
                     </p>
 
                     {/* Status */}
                     {fileObj.status === "success" && (
-                      <div className="flex items-center gap-1 text-green-500 text-sm mt-1">
+                      <div className="flex items-center gap-2 text-green-400 text-sm">
                         <CheckCircle size={14} />
-                        <span>Uploaded</span>
+                        <span>Przesłano pomyślnie</span>
                       </div>
                     )}
+
                     {fileObj.status === "error" && (
-                      <div className="text-red-400 text-sm mt-1">
-                        Error: {fileObj.error}
+                      <div className="flex items-center gap-2 text-red-400 text-sm">
+                        <AlertCircle size={14} />
+                        <span>Błąd: {fileObj.error}</span>
                       </div>
                     )}
-                    {uploading && fileObj.status === "pending" && (
-                      <div className="flex items-center gap-2 text-blue-400 text-sm mt-1">
-                        <Loader size={14} className="animate-spin" />
-                        <span>Uploading... {fileObj.progress}%</span>
+
+                    {fileObj.status === "pending" && uploading && (
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2 text-blue-400 text-sm">
+                          <Loader size={14} className="animate-spin" />
+                          <span>Wysyłanie... {fileObj.progress}%</span>
+                        </div>
+
+                        {/* Progress bar */}
+                        <div className="w-full bg-gray-700 rounded-full h-1.5 overflow-hidden">
+                          <div
+                            className="bg-blue-500 h-full transition-all duration-300"
+                            style={{ width: `${fileObj.progress}%` }}
+                          />
+                        </div>
                       </div>
+                    )}
+
+                    {fileObj.status === "pending" && !uploading && (
+                      <span className="text-sm text-gray-500">
+                        Oczekuje na wysłanie
+                      </span>
                     )}
                   </div>
 
-                  {/* Remove/Cancel button */}
+                  {/* Remove button */}
                   {!uploading && (
                     <button
                       onClick={() => removeFile(index)}
                       className="p-2 hover:bg-gray-700 rounded transition text-gray-400 hover:text-red-400"
-                    >
-                      <X size={20} />
-                    </button>
-                  )}
-                  {uploading && fileObj.status === "pending" && (
-                    <button
-                      onClick={() => cancelUpload(index)}
-                      className="p-2 hover:bg-gray-700 rounded transition text-gray-400 hover:text-red-400"
-                      title="Cancel"
+                      title="Usuń"
                     >
                       <X size={20} />
                     </button>
                   )}
                 </div>
-
-                {/* TK-377: Progress bar */}
-                {uploading && fileObj.status === "pending" && (
-                  <div className="w-full bg-gray-700 rounded-full h-2 overflow-hidden">
-                    <div
-                      className="bg-blue-500 h-full transition-all duration-300"
-                      style={{ width: `${fileObj.progress}%` }}
-                    />
-                  </div>
-                )}
               </div>
             ))}
           </div>
@@ -322,47 +387,53 @@ const handleUpload = async () => {
       )}
 
       {/* Upload Button */}
-      {selectedFiles.length > 0 && (
+      {selectedFiles.length > 0 && pendingFiles > 0 && (
         <button
           onClick={handleUpload}
           disabled={uploading}
-          className="btn-primary w-full flex items-center justify-center gap-2"
+          className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-3 px-6 rounded-lg transition-colors flex items-center justify-center gap-2"
         >
           {uploading ? (
             <>
               <Loader className="animate-spin" size={20} />
-              Uploading...
+              <span>Wysyłanie {pendingFiles} plików...</span>
             </>
           ) : (
             <>
               <Upload size={20} />
-              Upload {selectedFiles.length}{" "}
-              {selectedFiles.length === 1 ? "plik" : "plików"}
+              <span>
+                Wyślij {pendingFiles} {pendingFiles === 1 ? "plik" : "plików"}
+              </span>
             </>
           )}
         </button>
       )}
 
-      {/* Results */}
-      {uploadResults.length > 0 && !uploading && (
-        <div className="mt-6 bg-gray-800 rounded-lg p-4 border border-gray-700">
-          <h3 className="font-semibold mb-3">Wyniki uploadu:</h3>
-          <div className="space-y-2">
-            {uploadResults.map((result, idx) => (
-              <div
-                key={idx}
-                className={`text-sm p-2 rounded ${
-                  result.success
-                    ? "bg-green-900/50 text-green-200"
-                    : "bg-red-900/50 text-red-200"
-                }`}
-              >
-                <strong>{result.filename}:</strong> {result.message}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* Info box */}
+      <div className="mt-8 bg-gray-800 rounded-lg p-4 border border-gray-700">
+        <h3 className="font-semibold mb-2 text-sm">Informacje</h3>
+        <ul className="text-sm text-gray-400 space-y-1">
+          <li>• Możesz przesłać wiele plików naraz</li>
+          <li>
+            • Obsługiwane formaty video:{" "}
+            {ALLOWED_VIDEO.map((format) =>
+              format.split("/")[1].toUpperCase()
+            ).join(", ")}
+          </li>
+          <li>
+            • Obsługiwane formaty obrazów:{" "}
+            {ALLOWED_IMAGE.map((format) =>
+              format.split("/")[1].toUpperCase()
+            ).join(", ")}
+          </li>
+          <li>
+            • Maksymalny rozmiar video: {MAX_VIDEO_SIZE / (1024 * 1024)}MB
+          </li>
+          <li>
+            • Maksymalny rozmiar obrazu: {MAX_IMAGE_SIZE / (1024 * 1024)}MB
+          </li>
+        </ul>
+      </div>
     </div>
   );
 }

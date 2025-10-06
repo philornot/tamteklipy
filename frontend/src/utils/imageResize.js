@@ -12,9 +12,9 @@ export const resizeImage = (file, maxSize = 128) => {
             return
         }
 
-        // Walidacja rozmiaru przed resize (max 10MB)
-        if (file.size > 10 * 1024 * 1024) {
-            reject(new Error('Plik za duży (max 10MB)'))
+        // Walidacja rozmiaru przed resize (max 100MB)
+        if (file.size > 100 * 1024 * 1024) {
+            reject(new Error('Plik za duży (max 100MB)'))
             return
         }
 

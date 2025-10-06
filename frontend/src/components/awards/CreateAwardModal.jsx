@@ -206,7 +206,7 @@ function CreateAwardModal({onClose, onSuccess}) {
                                         <div>
                                             <Upload size={32} className="mx-auto mb-2 text-gray-400"/>
                                             <p className="text-gray-400">Wybierz obrazek</p>
-                                            <p className="text-xs text-gray-500 mt-1">PNG/JPG, max 10MB, 128x128px</p>
+                                            <p className="text-xs text-gray-500 mt-1">PNG/JPG, max 100MB</p>
                                         </div>
                                     )}
                                 </label>

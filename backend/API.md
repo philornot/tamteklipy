@@ -112,7 +112,7 @@ Upload klipa lub screenshota.
 **Supported formats**:
 
 - Video: MP4, WebM, MOV (max 500MB)
-- Image: PNG, JPG (max 10MB)
+- Image: PNG, JPG (max 100MB)
 
 **Response** (200):
 
