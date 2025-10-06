@@ -37,11 +37,17 @@ function ClipModal({ clip, onClose }) {
     return () => window.removeEventListener("keydown", handleEsc);
   }, [fetchClipDetails, onClose]);
 
-  const handleDownload = () => {
-    const downloadUrl = getDownloadUrl(clip.id);
-    console.log("Downloading from:", downloadUrl);
-    window.open(downloadUrl, "_blank");
-  };
+    const handleDownload = () => {
+      // Pobierz token z localStorage
+      const token = localStorage.getItem("access_token");
+
+      // Dodaj token do URL jako query param
+      const downloadUrl = getDownloadUrl(clip.id);
+      const urlWithToken = token ? `${downloadUrl}?token=${token}` : downloadUrl;
+
+      console.log("Downloading from:", urlWithToken);
+      window.open(urlWithToken, "_blank");
+    };
 
   const formatDate = (dateString) => {
     return new Date(dateString).toLocaleString("pl-PL", {

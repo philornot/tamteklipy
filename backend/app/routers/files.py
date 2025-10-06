@@ -14,7 +14,7 @@ import aiofiles
 from app.core.config import settings
 from app.core.database import engine
 from app.core.database import get_db
-from app.core.dependencies import get_current_user
+from app.core.dependencies import get_current_user, get_current_user_flexible
 from app.core.exceptions import FileUploadError, ValidationError, NotFoundError, AuthorizationError, StorageError, \
     DatabaseError
 from app.models.award import Award
@@ -536,12 +536,13 @@ async def get_clip(
 async def download_clip(
         clip_id: int,
         db: Session = Depends(get_db),
-        current_user: User = Depends(get_current_user)
+        current_user: User = Depends(get_current_user_flexible)
 ):
     """
     Pobierz plik klipa
 
     GET /api/files/download/{clip_id}
+    GET /api/files/download/{clip_id}?token=xxx (dla window.open)
 
     Zwraca plik z odpowiednimi headerami Content-Type i Content-Disposition
     """
@@ -572,18 +573,18 @@ async def download_clip(
 
     # Określ MIME type
     if clip.clip_type == ClipType.VIDEO:
-        media_type = "video/mp4"  # Możesz dopasować do rzeczywistego typu
+        media_type = "video/mp4"
     else:
-        media_type = "image/png"  # Możesz dopasować do rzeczywistego typu
+        media_type = "image/png"
 
     # Zwróć plik z proper headers
     return FileResponse(
         path=str(file_path),
         media_type=media_type,
-        filename=clip.filename,  # Original filename dla użytkownika
+        filename=clip.filename,
         headers={
             "Content-Disposition": f'attachment; filename="{clip.filename}"',
-            "Accept-Ranges": "bytes"  # Informuje że wspieramy range requests
+            "Accept-Ranges": "bytes"
         }
     )
 

@@ -140,3 +140,53 @@ def require_all_scopes(required_scopes: List[str]):
         return user
 
     return verify_all_scopes
+
+
+from typing import Optional
+from fastapi import Query
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+
+security = HTTPBearer(auto_error=False)
+
+
+async def get_current_user_flexible(
+        credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+        token: Optional[str] = Query(None, description="JWT token as query param"),
+        db: Session = Depends(get_db)
+) -> User:
+    """
+    Pobiera użytkownika z JWT tokena z headera LUB query param
+    Używane dla endpointów gdzie trzeba otworzyć w nowym oknie (download, iframe)
+    """
+    from app.core.security import verify_token
+    from app.core.exceptions import AuthenticationError
+
+    # Spróbuj header (preferowane)
+    jwt_token = None
+    if credentials:
+        jwt_token = credentials.credentials
+    # Fallback na query param
+    elif token:
+        jwt_token = token
+
+    if not jwt_token:
+        raise AuthenticationError(
+            message="Brak tokenu autoryzacji",
+            details={"hint": "Wymagany Bearer token w header lub ?token= w URL"}
+        )
+
+    # Verify token
+    payload = verify_token(jwt_token)
+    if not payload:
+        raise AuthenticationError(message="Nieprawidłowy token")
+
+    username = payload.get("sub")
+    if not username:
+        raise AuthenticationError(message="Invalid token payload")
+
+    # Pobierz użytkownika
+    user = db.query(User).filter(User.username == username).first()
+    if not user:
+        raise AuthenticationError(message="User not found")
+
+    return user
