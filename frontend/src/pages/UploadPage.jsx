@@ -88,73 +88,84 @@ function UploadPage() {
     setSelectedFiles(newFiles);
   };
 
-  const handleUpload = async () => {
-    if (selectedFiles.length === 0) return;
+  // Fragment do podmian w handleUpload:
 
-    setUploading(true);
-    const results = [];
+const handleUpload = async () => {
+  if (selectedFiles.length === 0) return;
 
-    for (let i = 0; i < selectedFiles.length; i++) {
-      const fileObj = selectedFiles[i];
+  setUploading(true);
+  const results = [];
 
-      try {
-        const formData = new FormData();
-        formData.append("file", fileObj.file);
+  for (let i = 0; i < selectedFiles.length; i++) {
+    const fileObj = selectedFiles[i];
 
-        // TK-377: Progress tracking
-        const response = await api.post("/files/upload", formData, {
-          headers: { "Content-Type": "multipart/form-data" },
-          onUploadProgress: (progressEvent) => {
-            const percentCompleted = Math.round(
-              (progressEvent.loaded * 100) / progressEvent.total
-            );
-            setSelectedFiles((prev) =>
-              prev.map((f, idx) =>
-                idx === i ? { ...f, progress: percentCompleted } : f
-              )
-            );
-          },
-        });
+    try {
+      const formData = new FormData();
+      formData.append("file", fileObj.file);
 
-        toast.success(`${response.data.filename} przesłany!`);
+      const response = await api.post("/files/upload", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+        onUploadProgress: (progressEvent) => {
+          const percentCompleted = Math.round(
+            (progressEvent.loaded * 100) / progressEvent.total
+          );
+          setSelectedFiles((prev) =>
+            prev.map((f, idx) =>
+              idx === i ? { ...f, progress: percentCompleted } : f
+            )
+          );
+        },
+      });
 
-        results.push({
-          filename: fileObj.file.name,
-          success: true,
-          message: "Uploaded successfully",
-          data: response.data,
-        });
+      // ✅ Backend zwraca obiekt z message, nie success
+      const filename = response.data.filename || fileObj.file.name;
+      toast.success(`${filename} przesłany!`);
 
-        setSelectedFiles((prev) =>
-          prev.map((f, idx) =>
-            idx === i ? { ...f, status: "success", progress: 100 } : f
-          )
-        );
-      } catch (error) {
-        results.push({
-          filename: fileObj.file.name,
-          success: false,
-          message: error.response?.data?.message || "Upload failed",
-        });
+      results.push({
+        filename: fileObj.file.name,
+        success: true,  // Status 200 = sukces
+        message: response.data.message || "Uploaded successfully",
+        data: response.data,
+      });
 
-        setSelectedFiles((prev) =>
-          prev.map((f, idx) =>
-            idx === i
-              ? { ...f, status: "error", error: error.response?.data?.message }
-              : f
-          )
-        );
-      }
+      setSelectedFiles((prev) =>
+        prev.map((f, idx) =>
+          idx === i ? { ...f, status: "success", progress: 100 } : f
+        )
+      );
+    } catch (error) {
+      console.error("Upload error:", error);
+
+      const errorMessage = error.response?.data?.message ||
+                          error.response?.data?.detail ||
+                          "Upload failed";
+
+      toast.error(`${fileObj.file.name}: ${errorMessage}`);
+
+      results.push({
+        filename: fileObj.file.name,
+        success: false,
+        message: errorMessage,
+      });
+
+      setSelectedFiles((prev) =>
+        prev.map((f, idx) =>
+          idx === i
+            ? { ...f, status: "error", error: errorMessage }
+            : f
+        )
+      );
     }
+  }
 
-    setUploadResults(results);
-    setUploading(false);
+  setUploadResults(results);
+  setUploading(false);
 
-    const allSuccess = results.every((r) => r.success);
-    if (allSuccess) {
-      setTimeout(() => navigate("/dashboard"), 2000);
-    }
-  };
+  const allSuccess = results.every((r) => r.success);
+  if (allSuccess) {
+    setTimeout(() => navigate("/dashboard"), 2000);
+  }
+};
 
   // TK-380: Cancel upload
   const cancelUpload = (index) => {
