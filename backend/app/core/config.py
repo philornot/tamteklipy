@@ -73,9 +73,3 @@ class Settings(BaseSettings):
 
 # Singleton - jedna instancja dla całej aplikacji
 settings = Settings()
-
-# DEBUG - wypisz co zostało załadowane (usuń potem w produkcji)
-print(f"[CONFIG] Loaded environment: {ENVIRONMENT}")
-print(f"[CONFIG] Config file: {ENV_FILE}")
-print(f"[CONFIG] Allowed origins: {settings.allowed_origins}")
-print(f"[CONFIG] Origins list: {settings.origins_list}")

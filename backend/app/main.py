@@ -65,7 +65,13 @@ app.add_middleware(
 async def log_requests(request: Request, call_next):
     """Middleware do logowania requestów i mierzenia czasu odpowiedzi"""
     start_time = time.time()
-    logger.info(f"Request: {request.method} {request.url.path}")
+
+    # Loguj też CORS preflight
+    if request.method == "OPTIONS":
+        origin = request.headers.get("origin", "unknown")
+        logger.info(f"CORS Preflight: {request.url.path} from {origin}")
+    else:
+        logger.info(f"Request: {request.method} {request.url.path}")
 
     response = await call_next(request)
 
@@ -85,6 +91,8 @@ async def startup_event():
     """Wykonywane przy starcie aplikacji"""
     logger.info(f"{settings.app_name} startuje...")
     logger.info(f"Environment: {settings.environment}")
+    logger.info(f"CORS Allowed Origins: {settings.allowed_origins}")
+    logger.info(f"CORS Origins List: {settings.origins_list}")
 
     # Inicjalizuj bazę danych
     try:
