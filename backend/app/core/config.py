@@ -2,9 +2,13 @@
 Konfiguracja aplikacji - zmienne środowiskowe
 """
 import os
-from typing import List, ClassVar
-
+from typing import List
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+# Pobierz environment PRZED utworzeniem klasy
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
+ENV_FILE = f".env.{ENVIRONMENT}"
 
 
 class Settings(BaseSettings):
@@ -36,11 +40,8 @@ class Settings(BaseSettings):
     max_video_size_mb: int = 500
     max_image_size_mb: int = 10
 
-    # CORS
-    allowed_origins: str = (
-        "http://localhost:5173,http://localhost:3000,"
-        "http://localhost:8000,https://localhost:8001"
-    )
+    # CORS - teraz Pydantic będzie to ładować z .env.production
+    allowed_origins: str = "http://localhost:5173,http://localhost:3000"
 
     # Email (opcjonalnie)
     smtp_host: str = ""
@@ -48,14 +49,11 @@ class Settings(BaseSettings):
     smtp_user: str = ""
     smtp_password: str = ""
 
-    # To jest zmienna klasowa (nie pole Pydantic)
-    _env: ClassVar[str] = os.getenv("ENVIRONMENT", "development")
-    _env_file: ClassVar[str] = f".env.{_env}"
-
     model_config = SettingsConfigDict(
-        env_file=_env_file,
+        env_file=ENV_FILE,  # <-- UŻYWAJ ZMIENNEJ GLOBALNEJ, NIE ClassVar
         env_file_encoding="utf-8",
-        case_sensitive=False,
+        case_sensitive=False,  # <-- ALLOWED_ORIGINS → allowed_origins
+        extra="ignore"  # Ignoruj nieznane zmienne z .env
     )
 
     # --- Własne property ---
@@ -75,3 +73,9 @@ class Settings(BaseSettings):
 
 # Singleton - jedna instancja dla całej aplikacji
 settings = Settings()
+
+# DEBUG - wypisz co zostało załadowane (usuń potem w produkcji)
+print(f"[CONFIG] Loaded environment: {ENVIRONMENT}")
+print(f"[CONFIG] Config file: {ENV_FILE}")
+print(f"[CONFIG] Allowed origins: {settings.allowed_origins}")
+print(f"[CONFIG] Origins list: {settings.origins_list}")
