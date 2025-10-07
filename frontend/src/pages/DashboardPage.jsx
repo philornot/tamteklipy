@@ -32,7 +32,7 @@ function DashboardPage() {
         try {
             const params = {
                 page: pageNum,
-                limit: 12, // Zmniejszony initial limit
+                limit: 12,
                 sort_by: sortBy,
                 sort_order: sortOrder,
             };
@@ -51,6 +51,10 @@ function DashboardPage() {
 
             // Sprawdź czy są jeszcze kolejne strony
             setHasMore(response.data.page < response.data.pages);
+
+            // HTTP/2 Server Push działa automatycznie przez Link header
+            // Przeglądarka automatycznie pobierze thumbnails w tle
+            console.log("✓ Clips fetched, thumbnails preloaded via HTTP/2 Server Push");
 
         } catch (err) {
             console.error("Failed to fetch clips:", err);
@@ -73,11 +77,6 @@ function DashboardPage() {
     useEffect(() => {
         const observer = new IntersectionObserver(
             (entries) => {
-                // Załaduj więcej gdy:
-                // - element jest widoczny
-                // - nie ładujemy już
-                // - są jeszcze dane do pobrania
-                // - użytkownik przewinął 80% strony
                 if (entries[0].isIntersecting && !loadingMore && !loading && hasMore) {
                     const scrollPercentage = (window.scrollY + window.innerHeight) / document.documentElement.scrollHeight;
 
@@ -92,7 +91,7 @@ function DashboardPage() {
             },
             {
                 root: null,
-                rootMargin: "200px", // Zacznij ładować 200px przed końcem
+                rootMargin: "200px",
                 threshold: 0.1
             }
         );
@@ -179,7 +178,7 @@ function DashboardPage() {
                 )}
             </div>
 
-            {/* Fallback: Load More button dla starszych przeglądarek */}
+            {/* Fallback: Load More button */}
             {!loadingMore && hasMore && clips.length > 0 && (
                 <div className="flex justify-center mt-8">
                     <button

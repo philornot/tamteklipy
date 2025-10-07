@@ -269,9 +269,17 @@ if frontend_dist.exists():
 if __name__ == "__main__":
     import uvicorn
 
+    # HTTP/2 wymaga SSL/TLS
+    # W produkcji Cloudflare Tunnel obsługuje SSL
+    # W dev można użyć self-signed certificates
+
     uvicorn.run(
         "app.main:app",
         host="0.0.0.0",
         port=8000,
-        reload=True
+        http="h2",  # Włącz HTTP/2
+        reload=True,
+        # Dla produkcji z Cloudflare Tunnel:
+        # ssl_keyfile="/path/to/key.pem",
+        # ssl_certfile="/path/to/cert.pem",
     )

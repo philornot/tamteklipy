@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import List, Optional
 
 import aiofiles
-from app.core.cache import cache_key_builder  
+from app.core.cache import cache_key_builder
 from app.core.config import settings
 from app.core.database import engine
 from app.core.database import get_db
@@ -26,7 +26,7 @@ from app.schemas.clip import ClipResponse, ClipListResponse, ClipDetailResponse
 from app.services.thumbnail_service import generate_thumbnail, extract_video_metadata
 from fastapi import APIRouter, UploadFile, File, Depends, Request
 from fastapi.responses import FileResponse, StreamingResponse
-from fastapi_cache.decorator import cache  
+from fastapi_cache.decorator import cache
 from pydantic import BaseModel, Field
 from sqlalchemy import desc, asc
 from sqlalchemy.exc import SQLAlchemyError
@@ -129,6 +129,7 @@ async def upload_file(
     """
     Upload pliku z pełną walidacją i error handling
     INVALIDUJE CACHE po uploadzpie
+    GENERUJE JPEG + WebP thumbnails
     """
     logger.info(f"Upload from {current_user.username}: {file.filename} ({file.content_type})")
 
@@ -203,7 +204,7 @@ async def upload_file(
                 path=str(file_path)
             )
 
-        # 9. Generuj thumbnail dla video i screenshotów
+        # 9. Generuj thumbnail dla video i screenshotów (JPEG + WebP)
         thumbnail_path = None
         thumbnail_webp_path = None
         video_metadata = None
@@ -225,10 +226,10 @@ async def upload_file(
 
                 success, webp_path = generate_thumbnail(
                     video_path=str(file_path),
-                    output_path=str(thumbnail_base_path),  # bez rozszerzenia
+                    output_path=str(thumbnail_base_path),
                     timestamp="00:00:01",
                     width=320,
-                    quality=5  # Zmienione z 2 na 5
+                    quality=5  # ZMIENIONE z 2 na 5
                 )
 
                 if success:
@@ -244,9 +245,9 @@ async def upload_file(
 
                 success, webp_path = generate_image_thumbnail(
                     image_path=str(file_path),
-                    output_path=str(thumbnail_base_path),  # bez rozszerzenia
+                    output_path=str(thumbnail_base_path),
                     width=320,
-                    quality=5  # Zmienione z 2 na 5
+                    quality=5  # ZMIENIONE z 2 na 5
                 )
 
                 if success:
@@ -267,7 +268,7 @@ async def upload_file(
                 filename=file.filename,
                 file_path=str(file_path.resolve()),
                 thumbnail_path=thumbnail_path,
-                thumbnail_webp_path=thumbnail_webp_path,  
+                thumbnail_webp_path=thumbnail_webp_path,  # NOWE POLE
                 clip_type=clip_type,
                 file_size=file_size,
                 duration=video_metadata.get("duration") if video_metadata else None,
@@ -323,6 +324,7 @@ async def upload_file(
 
         if thumbnail_path:
             response["thumbnail_generated"] = True
+            response["webp_generated"] = thumbnail_webp_path is not None
 
         if video_metadata:
             response["duration"] = video_metadata.get("duration")
@@ -510,7 +512,7 @@ async def list_clips(
 @router.get("/clips/{clip_id}", response_model=ClipDetailResponse)
 @cache(expire=300, key_builder=cache_key_builder)
 async def get_clip(
-        request: Request,  # WYMAGANE dla cache_key_builder
+        request: Request,
         clip_id: int,
         db: Session = Depends(get_db),
         current_user: User = Depends(get_current_user)
@@ -560,10 +562,10 @@ async def get_clip(
         uploader_id=clip.uploader_id,
         award_count=clip.award_count,
         has_thumbnail=clip.thumbnail_path is not None,
-        has_webp_thumbnail=clip.thumbnail_webp_path is not None,  
+        has_webp_thumbnail=clip.thumbnail_webp_path is not None,  # NOWE
         awards=awards_info,
         thumbnail_url=f"/api/files/thumbnails/{clip.id}" if clip.thumbnail_path else None,
-        thumbnail_webp_url=f"/api/files/thumbnails/{clip.id}" if clip.thumbnail_webp_path else None,  
+        thumbnail_webp_url=f"/api/files/thumbnails/{clip.id}" if clip.thumbnail_webp_path else None,  # NOWE
         download_url=f"/api/files/download/{clip.id}"
     )
 
