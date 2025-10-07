@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import List, Optional
 
 import aiofiles
-from app.core.cache import cache_key_builder  # NOWE
+from app.core.cache import cache_key_builder  
 from app.core.config import settings
 from app.core.database import engine
 from app.core.database import get_db
@@ -26,7 +26,7 @@ from app.schemas.clip import ClipResponse, ClipListResponse, ClipDetailResponse
 from app.services.thumbnail_service import generate_thumbnail, extract_video_metadata
 from fastapi import APIRouter, UploadFile, File, Depends, Request
 from fastapi.responses import FileResponse, StreamingResponse
-from fastapi_cache.decorator import cache  # NOWE
+from fastapi_cache.decorator import cache  
 from pydantic import BaseModel, Field
 from sqlalchemy import desc, asc
 from sqlalchemy.exc import SQLAlchemyError
@@ -205,6 +205,7 @@ async def upload_file(
 
         # 9. Generuj thumbnail dla video i screenshotów
         thumbnail_path = None
+        thumbnail_webp_path = None
         video_metadata = None
 
         try:
@@ -215,22 +216,25 @@ async def upload_file(
 
             thumbnails_dir.mkdir(parents=True, exist_ok=True)
 
-            thumbnail_filename = f"{Path(unique_filename).stem}.jpg"
-            thumbnail_full_path = thumbnails_dir / thumbnail_filename
+            thumbnail_filename = f"{Path(unique_filename).stem}"  # bez rozszerzenia
+            thumbnail_base_path = thumbnails_dir / thumbnail_filename
 
             if clip_type == ClipType.VIDEO:
                 # Video: użyj FFmpeg z timestamp
                 video_metadata = extract_video_metadata(str(file_path))
 
-                generate_thumbnail(
+                success, webp_path = generate_thumbnail(
                     video_path=str(file_path),
-                    output_path=str(thumbnail_full_path),
+                    output_path=str(thumbnail_base_path),  # bez rozszerzenia
                     timestamp="00:00:01",
                     width=320,
-                    quality=2
+                    quality=5  # Zmienione z 2 na 5
                 )
 
-                logger.info(f"Video thumbnail generated: {thumbnail_full_path}")
+                if success:
+                    thumbnail_path = f"{thumbnail_base_path}.jpg"
+                    thumbnail_webp_path = webp_path
+                    logger.info(f"Video thumbnail generated: JPEG + WebP")
 
             else:
                 # Screenshot: użyj FFmpeg do skalowania obrazu
@@ -238,16 +242,17 @@ async def upload_file(
 
                 video_metadata = extract_image_metadata(str(file_path))
 
-                generate_image_thumbnail(
+                success, webp_path = generate_image_thumbnail(
                     image_path=str(file_path),
-                    output_path=str(thumbnail_full_path),
+                    output_path=str(thumbnail_base_path),  # bez rozszerzenia
                     width=320,
-                    quality=2
+                    quality=5  # Zmienione z 2 na 5
                 )
 
-                logger.info(f"Image thumbnail generated: {thumbnail_full_path}")
-
-            thumbnail_path = str(thumbnail_full_path.resolve())
+                if success:
+                    thumbnail_path = f"{thumbnail_base_path}.jpg"
+                    thumbnail_webp_path = webp_path
+                    logger.info(f"Image thumbnail generated: JPEG + WebP")
 
         except FileUploadError as e:
             logger.warning(f"Thumbnail generation failed: {e}")
@@ -262,6 +267,7 @@ async def upload_file(
                 filename=file.filename,
                 file_path=str(file_path.resolve()),
                 thumbnail_path=thumbnail_path,
+                thumbnail_webp_path=thumbnail_webp_path,  
                 clip_type=clip_type,
                 file_size=file_size,
                 duration=video_metadata.get("duration") if video_metadata else None,
@@ -280,11 +286,13 @@ async def upload_file(
 
         except SQLAlchemyError as e:
             logger.error(f"Database error: {e}")
-            # Usuń plik jeśli zapis do bazy się nie udał
+            # Usuń pliki jeśli zapis do bazy się nie udał
             try:
                 file_path.unlink()
                 if thumbnail_path:
                     Path(thumbnail_path).unlink()
+                if thumbnail_webp_path:
+                    Path(thumbnail_webp_path).unlink()
             except OSError:
                 pass
 
@@ -484,6 +492,7 @@ async def list_clips(
                 uploader_id=clip.uploader_id,
                 award_count=clip.award_count,
                 has_thumbnail=clip.thumbnail_path is not None,
+                has_webp_thumbnail=clip.thumbnail_webp_path is not None,
                 award_icons=award_icons
             )
         )
@@ -553,8 +562,10 @@ async def get_clip(
         uploader_id=clip.uploader_id,
         award_count=clip.award_count,
         has_thumbnail=clip.thumbnail_path is not None,
+        has_webp_thumbnail=clip.thumbnail_webp_path is not None,  
         awards=awards_info,
         thumbnail_url=f"/api/files/thumbnails/{clip.id}" if clip.thumbnail_path else None,
+        thumbnail_webp_url=f"/api/files/thumbnails/{clip.id}" if clip.thumbnail_webp_path else None,  
         download_url=f"/api/files/download/{clip.id}"
     )
 
@@ -745,11 +756,13 @@ async def download_bulk(
 @router.get("/thumbnails/{clip_id}")
 async def get_thumbnail(
         clip_id: int,
+        request: Request,
         db: Session = Depends(get_db),
         current_user: User = Depends(get_current_user_flexible)
 ):
     """
     Pobierz miniaturę klipa
+    Automatycznie zwraca WebP dla obsługujących przeglądarek, JPEG jako fallback
 
     GET /api/files/thumbnails/{clip_id}
     GET /api/files/thumbnails/{clip_id}?token=xxx (dla <img> tag)
@@ -765,6 +778,28 @@ async def get_thumbnail(
     if not clip.thumbnail_path:
         raise NotFoundError(resource="Thumbnail dla klipa", resource_id=clip_id)
 
+    # Sprawdź czy klient obsługuje WebP (header Accept)
+    accept_header = request.headers.get("accept", "")
+    supports_webp = "image/webp" in accept_header
+
+    # Jeśli klient obsługuje WebP i mamy WebP - zwróć WebP
+    if supports_webp and clip.thumbnail_webp_path:
+        thumbnail_path = Path(clip.thumbnail_webp_path)
+        media_type = "image/webp"
+
+        if thumbnail_path.exists():
+            logger.debug(f"Serving WebP thumbnail for clip {clip_id}")
+            return FileResponse(
+                path=str(thumbnail_path),
+                media_type=media_type,
+                headers={
+                    "Cache-Control": "public, max-age=3600"
+                }
+            )
+        else:
+            logger.warning(f"WebP thumbnail not found, falling back to JPEG: {thumbnail_path}")
+
+    # Fallback do JPEG
     thumbnail_path = Path(clip.thumbnail_path)
 
     if not thumbnail_path.exists():
@@ -774,6 +809,7 @@ async def get_thumbnail(
             path=str(thumbnail_path)
         )
 
+    logger.debug(f"Serving JPEG thumbnail for clip {clip_id}")
     return FileResponse(
         path=str(thumbnail_path),
         media_type="image/jpeg",

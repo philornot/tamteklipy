@@ -1,10 +1,11 @@
 """
 Service do generowania thumbnails dla video i obrazów używając FFmpeg
+Z obsługą WebP i fallback do JPEG
 """
 import logging
 import subprocess
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple
 
 from app.core.exceptions import FileUploadError
 
@@ -16,20 +17,21 @@ def generate_thumbnail(
         output_path: str,
         timestamp: str = "00:00:01",
         width: int = 320,
-        quality: int = 2
-) -> bool:
+        quality: int = 5
+) -> Tuple[bool, Optional[str]]:
     """
     Generuje thumbnail z video używając FFmpeg
+    Tworzy WebP jako primary i JPEG jako fallback
 
     Args:
         video_path: Ścieżka do pliku video
-        output_path: Ścieżka gdzie zapisać thumbnail
+        output_path: Ścieżka gdzie zapisać thumbnail (bez rozszerzenia lub z .jpg)
         timestamp: Timestamp w formacie HH:MM:SS, z którego wziąć klatkę
         width: Szerokość thumbnail (wysokość auto)
-        quality: Jakość JPEG (1-31, niższe = lepsza jakość)
+        quality: Jakość JPEG (1-31, niższe = lepsza jakość, domyślnie 5)
 
     Returns:
-        bool: True, jeśli sukces, False, jeśli błąd
+        Tuple[bool, Optional[str]]: (success, webp_path)
 
     Raises:
         FileUploadError: Jeśli FFmpeg nie jest zainstalowany lub wystąpił błąd
@@ -48,44 +50,82 @@ def generate_thumbnail(
                 reason="FFmpeg is required for thumbnail generation"
             )
 
-        # Komenda FFmpeg do generowania thumbnail
-        cmd = [
+        # Przygotuj ścieżki
+        base_path = Path(output_path)
+        if base_path.suffix:
+            base_path = base_path.with_suffix('')
+
+        jpeg_path = f"{base_path}.jpg"
+        webp_path = f"{base_path}.webp"
+
+        # 1. Generuj JPEG fallback (jakość 5 zamiast 2)
+        cmd_jpeg = [
             "ffmpeg",
-            "-ss", timestamp,  # Seek do timestamp
-            "-i", str(video_path),  # Input file
-            "-vframes", "1",  # Jedna klatka
-            "-vf", f"scale={width}:-1",  # Skaluj do szerokości (wysokość auto)
-            "-q:v", str(quality),  # Jakość JPEG
-            "-y",  # Nadpisz, jeśli istnieje
-            str(output_path)  # Output file
+            "-ss", timestamp,
+            "-i", str(video_path),
+            "-vframes", "1",
+            "-vf", f"scale={width}:-1",
+            "-q:v", str(quality),
+            "-y",
+            jpeg_path
         ]
 
-        logger.info(f"Generating thumbnail: {video_path} -> {output_path}")
+        logger.info(f"Generating JPEG thumbnail: {video_path} -> {jpeg_path}")
 
-        # Uruchom FFmpeg
         result = subprocess.run(
-            cmd,
+            cmd_jpeg,
             capture_output=True,
             text=True,
-            timeout=30  # Timeout 30 sekund
+            timeout=30
         )
 
         if result.returncode != 0:
-            logger.error(f"FFmpeg error: {result.stderr}")
+            logger.error(f"FFmpeg JPEG error: {result.stderr}")
             raise FileUploadError(
-                message="Błąd podczas generowania thumbnail",
-                reason=result.stderr[:200]  # Pierwsze 200 znaków błędu
+                message="Błąd podczas generowania JPEG thumbnail",
+                reason=result.stderr[:200]
             )
 
-        # Sprawdź, czy plik został utworzony
-        if not Path(output_path).exists():
+        if not Path(jpeg_path).exists():
             raise FileUploadError(
-                message="Thumbnail nie został utworzony",
+                message="JPEG thumbnail nie został utworzony",
                 reason="Output file does not exist"
             )
 
-        logger.info(f"Thumbnail generated successfully: {output_path}")
-        return True
+        # 2. Generuj WebP (quality 75 dla WebP)
+        cmd_webp = [
+            "ffmpeg",
+            "-ss", timestamp,
+            "-i", str(video_path),
+            "-vframes", "1",
+            "-vf", f"scale={width}:-1",
+            "-c:v", "libwebp",
+            "-quality", "75",
+            "-y",
+            webp_path
+        ]
+
+        logger.info(f"Generating WebP thumbnail: {video_path} -> {webp_path}")
+
+        result = subprocess.run(
+            cmd_webp,
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+
+        if result.returncode != 0:
+            logger.warning(f"FFmpeg WebP warning: {result.stderr}")
+            # WebP failed, but we have JPEG fallback
+            logger.info(f"WebP generation failed, using JPEG fallback")
+            return True, None
+
+        if not Path(webp_path).exists():
+            logger.warning("WebP thumbnail not created, using JPEG fallback")
+            return True, None
+
+        logger.info(f"Thumbnails generated successfully: JPEG + WebP")
+        return True, webp_path
 
     except subprocess.TimeoutExpired:
         logger.error("FFmpeg timeout")
@@ -111,21 +151,20 @@ def generate_image_thumbnail(
         image_path: str,
         output_path: str,
         width: int = 320,
-        quality: int = 2
-) -> bool:
+        quality: int = 5
+) -> Tuple[bool, Optional[str]]:
     """
     Generuje thumbnail z obrazu używając FFmpeg
-
-    FFmpeg świetnie radzi sobie z obrazami (PNG, JPG) i jest lżejszy niż PIL
+    Tworzy WebP jako primary i JPEG jako fallback
 
     Args:
         image_path: Ścieżka do pliku obrazu
-        output_path: Ścieżka gdzie zapisać thumbnail
+        output_path: Ścieżka gdzie zapisać thumbnail (bez rozszerzenia lub z .jpg)
         width: Szerokość thumbnail (wysokość zostanie obliczona proporcjonalnie)
-        quality: Jakość JPEG (1-31, niższe = lepsza jakość)
+        quality: Jakość JPEG (1-31, niższe = lepsza jakość, domyślnie 5)
 
     Returns:
-        bool: True, jeśli sukces
+        Tuple[bool, Optional[str]]: (success, webp_path)
 
     Raises:
         FileUploadError: Jeśli FFmpeg nie jest zainstalowany lub wystąpił błąd
@@ -144,45 +183,77 @@ def generate_image_thumbnail(
                 reason="FFmpeg is required for thumbnail generation"
             )
 
-        # Komenda FFmpeg do skalowania obrazu
-        # -i: input
-        # -vf scale: skaluj do szerokości (wysokość auto, zachowaj proporcje)
-        # -q:v: jakość JPEG
-        cmd = [
+        # Przygotuj ścieżki
+        base_path = Path(output_path)
+        if base_path.suffix:
+            base_path = base_path.with_suffix('')
+
+        jpeg_path = f"{base_path}.jpg"
+        webp_path = f"{base_path}.webp"
+
+        # 1. Generuj JPEG fallback (jakość 5 zamiast 2)
+        cmd_jpeg = [
             "ffmpeg",
-            "-i", str(image_path),  # Input image
-            "-vf", f"scale={width}:-1",  # Skaluj do szerokości (wysokość auto)
-            "-q:v", str(quality),  # Jakość JPEG
-            "-y",  # Nadpisz, jeśli istnieje
-            str(output_path)  # Output file
+            "-i", str(image_path),
+            "-vf", f"scale={width}:-1",
+            "-q:v", str(quality),
+            "-y",
+            jpeg_path
         ]
 
-        logger.info(f"Generating image thumbnail: {image_path} -> {output_path}")
+        logger.info(f"Generating JPEG image thumbnail: {image_path} -> {jpeg_path}")
 
-        # Uruchom FFmpeg
         result = subprocess.run(
-            cmd,
+            cmd_jpeg,
             capture_output=True,
             text=True,
-            timeout=15  # Timeout 15 sekund (obrazy są szybsze)
+            timeout=15
         )
 
         if result.returncode != 0:
-            logger.error(f"FFmpeg error: {result.stderr}")
+            logger.error(f"FFmpeg JPEG error: {result.stderr}")
             raise FileUploadError(
-                message="Błąd podczas generowania thumbnail dla obrazu",
+                message="Błąd podczas generowania JPEG thumbnail dla obrazu",
                 reason=result.stderr[:200]
             )
 
-        # Sprawdź, czy plik został utworzony
-        if not Path(output_path).exists():
+        if not Path(jpeg_path).exists():
             raise FileUploadError(
-                message="Thumbnail nie został utworzony",
+                message="JPEG thumbnail nie został utworzony",
                 reason="Output file does not exist"
             )
 
-        logger.info(f"Image thumbnail generated successfully: {output_path}")
-        return True
+        # 2. Generuj WebP
+        cmd_webp = [
+            "ffmpeg",
+            "-i", str(image_path),
+            "-vf", f"scale={width}:-1",
+            "-c:v", "libwebp",
+            "-quality", "75",
+            "-y",
+            webp_path
+        ]
+
+        logger.info(f"Generating WebP image thumbnail: {image_path} -> {webp_path}")
+
+        result = subprocess.run(
+            cmd_webp,
+            capture_output=True,
+            text=True,
+            timeout=15
+        )
+
+        if result.returncode != 0:
+            logger.warning(f"FFmpeg WebP warning: {result.stderr}")
+            logger.info(f"WebP generation failed, using JPEG fallback")
+            return True, None
+
+        if not Path(webp_path).exists():
+            logger.warning("WebP thumbnail not created, using JPEG fallback")
+            return True, None
+
+        logger.info(f"Image thumbnails generated successfully: JPEG + WebP")
+        return True, webp_path
 
     except subprocess.TimeoutExpired:
         logger.error("FFmpeg timeout for image")

@@ -40,6 +40,7 @@ class ClipResponse(BaseModel):
     uploader_id: int
     award_count: int = 0
     has_thumbnail: bool = False
+    has_webp_thumbnail: bool = False
     award_icons: List[dict] = []  # [{award_name, icon_url, count}]
 
     class Config:
@@ -50,6 +51,7 @@ class ClipDetailResponse(ClipResponse):
     """Szczegółowa odpowiedź z nagrodami"""
     awards: List[dict] = []
     thumbnail_url: Optional[str] = None
+    thumbnail_webp_url: Optional[str] = None
     download_url: str
 
     class Config:

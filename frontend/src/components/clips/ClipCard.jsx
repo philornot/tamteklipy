@@ -1,13 +1,15 @@
 import { useState } from "react";
-import { Award, Calendar, Image, Play, User } from "lucide-react";
 import * as LucideIcons from "lucide-react";
+import { Award, Calendar, Image, Play, User } from "lucide-react";
 import ClipModal from "./ClipModal";
-import { getThumbnailUrl, getBaseUrl } from "../../utils/urlHelper";
+import { getBaseUrl, getThumbnailUrl } from "../../utils/urlHelper";
 
 function ClipCard({ clip }) {
   const [showModal, setShowModal] = useState(false);
 
   const thumbnailUrl = clip.has_thumbnail ? getThumbnailUrl(clip.id) : null;
+  // URL dla WebP - backend automatycznie zwróci WebP jeśli klient obsługuje
+  const thumbnailWebPUrl = thumbnailUrl; // Ten sam endpoint, backend decyduje
 
   const formatDate = (dateString) => {
     return new Date(dateString).toLocaleDateString("pl-PL", {
@@ -79,15 +81,20 @@ function ClipCard({ clip }) {
         {/* Thumbnail */}
         <div className="relative aspect-video bg-gray-900 flex items-center justify-center overflow-hidden">
           {thumbnailUrl ? (
-            <img
-              src={thumbnailUrl}
-              alt={clip.filename}
-              className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
-              onError={(e) => {
-                console.error("Thumbnail load error for clip", clip.id);
-                e.target.style.display = "none";
-              }}
-            />
+            <picture>
+              {/* WebP source — przeglądarka automatycznie użyje, jeśli obsługuje */}
+              <source srcSet={thumbnailWebPUrl} type="image/webp" />
+              {/* JPEG fallback */}
+              <img
+                src={thumbnailUrl}
+                alt={clip.filename}
+                className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                onError={(e) => {
+                  console.error("Thumbnail load error for clip", clip.id);
+                  e.target.style.display = "none";
+                }}
+              />
+            </picture>
           ) : (
             <div className="text-gray-600">
               {clip.clip_type === "video" ? (

@@ -29,6 +29,7 @@ class Clip(Base):
     filename = Column(String(255), nullable=False)  # Oryginalna nazwa pliku
     file_path = Column(String(500), nullable=False, unique=True)  # Ścieżka na dysku
     thumbnail_path = Column(String(500), nullable=True)  # Ścieżka do miniatury (dla video)
+    thumbnail_webp_path = Column(String, nullable=True, index=True)
 
     # Typ pliku
     clip_type = Column(SQLEnum(ClipType), nullable=False, default=ClipType.VIDEO)
