@@ -391,8 +391,6 @@ async def list_clips(
     logger.info(f"Database URL: {engine.url}")
 
     query = db.query(Clip).filter(Clip.is_deleted == False)
-    total = query.count()
-    logger.info(f"Total clips found: {total}")
 
     # Filtrowanie po typie
     if clip_type:
