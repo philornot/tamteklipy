@@ -6,7 +6,7 @@ function Footer() {
           <p>© 2025 Tamte Klipy - Platforma klipów</p>
 
           <div className="flex gap-4">
-            <span>MVP v0.1.0</span>
+            <span>v1.0.0</span>
           </div>
         </div>
       </div>
