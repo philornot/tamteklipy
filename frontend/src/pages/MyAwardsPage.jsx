@@ -1,27 +1,39 @@
 import { useEffect, useState } from "react";
-import { Award, Loader, Plus, Trash2, Edit2 } from "lucide-react";
+import { Award, Loader, Plus, Trash2, Edit2, Sparkles } from "lucide-react";
 import * as LucideIcons from "lucide-react";
 import api from "../services/api";
 import toast from "react-hot-toast";
 import CreateAwardModal from "../components/awards/CreateAwardModal";
 import EditMyAwardModal from "../components/awards/EditMyAwardModal";
+import { getBaseUrl } from "../utils/urlHelper";
 
 function MyAwardsPage() {
   const [customAwards, setCustomAwards] = useState([]);
+  const [awardTypesMap, setAwardTypesMap] = useState({});
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingAward, setEditingAward] = useState(null);
 
   useEffect(() => {
-    fetchCustomAwards();
+    fetchData();
   }, []);
 
-  const fetchCustomAwards = async () => {
+  const fetchData = async () => {
+    setLoading(true);
     try {
-      const response = await api.get("/my-awards/my-award-types");
-      setCustomAwards(response.data);
+      // Pobierz custom awards
+      const awardsResponse = await api.get("/my-awards/my-award-types");
+      setCustomAwards(awardsResponse.data);
+
+      // Pobierz szczegółowe info o award types
+      const typesResponse = await api.get("/admin/award-types/detailed");
+      const typesMap = {};
+      typesResponse.data.forEach(type => {
+        typesMap[type.id] = type;
+      });
+      setAwardTypesMap(typesMap);
     } catch (err) {
-      console.error("Failed to fetch custom awards:", err);
+      console.error("Failed to fetch data:", err);
       toast.error("Nie udało się załadować nagród");
     } finally {
       setLoading(false);
@@ -34,7 +46,7 @@ function MyAwardsPage() {
     try {
       await api.delete(`/my-awards/my-award-types/${awardId}`);
       toast.success("Nagroda usunięta");
-      fetchCustomAwards();
+      fetchData();
     } catch (err) {
       toast.error(
         err.response?.data?.message || "Nie udało się usunąć nagrody"
@@ -43,34 +55,68 @@ function MyAwardsPage() {
   };
 
   const renderIcon = (award) => {
-    if (award.icon_url) {
+    const awardType = awardTypesMap[award.id];
+
+    if (!awardType) {
+      // Fallback na emoji jeśli nie ma info w mapie
       return (
-        <img
-          src={`${import.meta.env.VITE_API_URL}${award.icon_url}`}
-          alt={award.display_name}
-          className="w-16 h-16 rounded"
-        />
+        <div className="w-16 h-16 rounded bg-gray-700 flex items-center justify-center text-3xl">
+          {award.icon || "🏆"}
+        </div>
       );
-    } else if (award.lucide_icon) {
-      const componentName = award.lucide_icon
+    }
+
+    // Custom icon (uploaded)
+    if (awardType.icon_type === "custom" && awardType.icon_url) {
+      return (
+        <div className="w-16 h-16 rounded bg-gray-700 flex items-center justify-center overflow-hidden">
+          <img
+            src={`${getBaseUrl()}${awardType.icon_url}`}
+            alt={awardType.display_name}
+            className="w-full h-full object-cover"
+            onError={(e) => {
+              // Fallback na emoji przy błędzie ładowania
+              e.target.style.display = 'none';
+              const parent = e.target.parentElement;
+              parent.innerHTML = `<span class="text-3xl">${awardType.icon || "🏆"}</span>`;
+            }}
+          />
+        </div>
+      );
+    }
+
+    // Lucide icon
+    if (awardType.icon_type === "lucide" && awardType.lucide_icon) {
+      const componentName = awardType.lucide_icon
         .split("-")
         .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
         .join("");
       const IconComponent = LucideIcons[componentName];
-      return IconComponent ? (
-        <IconComponent size={64} />
-      ) : (
-        <div className="w-16 h-16 rounded bg-gray-700 flex items-center justify-center text-3xl">
-          {award.icon}
-        </div>
-      );
-    } else {
-      return (
-        <div className="w-16 h-16 rounded bg-gray-700 flex items-center justify-center text-3xl">
-          {award.icon}
-        </div>
-      );
+
+      if (IconComponent) {
+        return (
+          <div className="w-16 h-16 rounded bg-gray-700 flex items-center justify-center">
+            <IconComponent size={48} />
+          </div>
+        );
+      }
     }
+
+    // Emoji fallback
+    return (
+      <div className="w-16 h-16 rounded bg-gray-700 flex items-center justify-center text-3xl">
+        {awardType.icon || award.icon || "🏆"}
+      </div>
+    );
+  };
+
+  const getIconTypeLabel = (award) => {
+    const awardType = awardTypesMap[award.id];
+    if (!awardType) return "Emoji";
+
+    if (awardType.icon_type === "custom") return "Custom";
+    if (awardType.icon_type === "lucide") return "Lucide";
+    return "Emoji";
   };
 
   if (loading) {
@@ -82,103 +128,142 @@ function MyAwardsPage() {
   }
 
   return (
-    <div className="container mx-auto px-4 py-8 max-w-4xl">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-3xl font-bold mb-2">Moje Nagrody</h1>
-          <p className="text-gray-400">
-            Własne nagrody ({customAwards.length}/5)
-          </p>
+    <div className="container mx-auto px-4 py-8 max-w-6xl">
+      <div className="mb-6">
+        <div className="flex items-center justify-between mb-2">
+          <h1 className="text-3xl font-bold">Moje Nagrody</h1>
+          <button
+            onClick={() => setShowCreateModal(true)}
+            disabled={customAwards.length >= 5}
+            className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-lg transition-colors flex items-center gap-2"
+            title={
+              customAwards.length >= 5 ? "Maksymalnie 5 nagród" : "Utwórz nagrodę"
+            }
+          >
+            <Plus size={20} />
+            Nowa nagroda
+          </button>
         </div>
-
-        <button
-          onClick={() => setShowCreateModal(true)}
-          disabled={customAwards.length >= 5}
-          className="btn-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-          title={
-            customAwards.length >= 5 ? "Maksymalnie 5 nagród" : "Utwórz nagrodę"
-          }
-        >
-          <Plus size={20} />
-          Nowa nagroda
-        </button>
+        <p className="text-gray-400">
+          Własne nagrody ({customAwards.length}/5)
+        </p>
       </div>
 
       {customAwards.length === 0 ? (
-        <div className="text-center py-12 bg-gray-800 rounded-lg border border-gray-700">
-          <Award size={48} className="mx-auto mb-4 text-gray-600" />
-          <p className="text-gray-400 mb-4">Nie masz jeszcze własnych nagród</p>
+        <div className="text-center py-16 bg-gray-800 rounded-lg border border-gray-700">
+          <Award size={64} className="mx-auto mb-4 text-gray-600" />
+          <p className="text-xl text-gray-300 mb-2">Nie masz jeszcze własnych nagród</p>
+          <p className="text-gray-500 mb-6">
+            Stwórz własne nagrody do przyznawania klipom
+          </p>
           <button
             onClick={() => setShowCreateModal(true)}
-            className="btn-primary"
+            className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors inline-flex items-center gap-2"
           >
+            <Sparkles size={20} />
             Utwórz pierwszą nagrodę
           </button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {customAwards.map((award) => (
-            <div
-              key={award.id}
-              className="bg-gray-800 rounded-lg p-4 border border-gray-700"
-            >
-              <div className="flex items-start gap-4">
-                <div className="flex-shrink-0">{renderIcon(award)}</div>
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+            {customAwards.map((award) => {
+              const awardType = awardTypesMap[award.id];
 
-                <div className="flex-1 min-w-0">
-                  {/* Dodanie odznaki "Imienna" przy tytule */}
-                  <h3 className="font-semibold text-lg mb-1 flex items-center gap-2">
-                    {award.display_name}
-                    {award.is_personal && (
-                      <span className="text-xs bg-blue-600 px-2 py-1 rounded">
-                        Imienna
-                      </span>
+              return (
+                <div
+                  key={award.id}
+                  className="bg-gray-800 rounded-lg p-5 border border-gray-700 hover:border-gray-600 transition-colors"
+                >
+                  <div className="flex items-start gap-4 mb-4">
+                    <div className="flex-shrink-0">{renderIcon(award)}</div>
+
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <h3 className="font-semibold text-lg truncate">
+                          {award.display_name}
+                        </h3>
+                        {award.is_personal && (
+                          <span className="text-xs bg-blue-600 px-2 py-0.5 rounded flex-shrink-0">
+                            Imienna
+                          </span>
+                        )}
+                      </div>
+
+                      <p className="text-sm text-gray-400 mb-3 line-clamp-2">
+                        {award.description || "Brak opisu"}
+                      </p>
+
+                      <div className="flex items-center gap-3 text-xs text-gray-500">
+                        <div className="flex items-center gap-1.5">
+                          <div
+                            className="w-4 h-4 rounded border border-gray-600"
+                            style={{ backgroundColor: award.color }}
+                          />
+                          <span>{award.color}</span>
+                        </div>
+
+                        <span className="text-gray-600">•</span>
+
+                        <span>{getIconTypeLabel(award)}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2 pt-3 border-t border-gray-700">
+                    <button
+                      onClick={() => setEditingAward(award)}
+                      className="flex-1 py-2 px-3 text-blue-400 hover:text-blue-300 hover:bg-gray-700 rounded transition-colors flex items-center justify-center gap-2 text-sm font-medium"
+                    >
+                      <Edit2 size={16} />
+                      Edytuj
+                    </button>
+
+                    {!award.is_personal && (
+                      <button
+                        onClick={() => handleDelete(award.id, award.display_name)}
+                        className="flex-1 py-2 px-3 text-red-400 hover:text-red-300 hover:bg-gray-700 rounded transition-colors flex items-center justify-center gap-2 text-sm font-medium"
+                      >
+                        <Trash2 size={16} />
+                        Usuń
+                      </button>
                     )}
-                  </h3>
-                  <p className="text-sm text-gray-400 mb-2">
-                    {award.description}
-                  </p>
-                  <div className="flex items-center gap-2">
-                    <div
-                      className="w-6 h-6 rounded"
-                      style={{ backgroundColor: award.color }}
-                    />
-                    <span className="text-xs text-gray-500">{award.color}</span>
+
+                    {award.is_personal && (
+                      <div className="flex-1 py-2 px-3 text-gray-500 text-center text-sm">
+                        Chroniona
+                      </div>
+                    )}
                   </div>
                 </div>
+              );
+            })}
+          </div>
 
-                <div className="flex flex-col gap-2">
-                  <button
-                    onClick={() => setEditingAward(award)}
-                    className="p-2 text-blue-400 hover:text-blue-300 hover:bg-gray-700 rounded transition"
-                    title="Edytuj nagrodę"
-                  >
-                    <Edit2 size={20} />
-                  </button>
-
-                  {/* Pokaż przycisk Delete, tylko jeśli nie jest personal */}
-                  {!award.is_personal && (
-                    <button
-                      onClick={() => handleDelete(award.id, award.display_name)}
-                      className="p-2 text-red-400 hover:text-red-300 hover:bg-gray-700 rounded transition"
-                      title="Usuń nagrodę"
-                    >
-                      <Trash2 size={20} />
-                    </button>
-                  )}
-
-                  {/* Usunięto boczną etykietę "Imienna", ponieważ dodano badge przy tytule */}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
+          {/* Info box */}
+          <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
+            <h3 className="font-semibold mb-2 text-sm flex items-center gap-2">
+              <Sparkles size={16} className="text-yellow-500" />
+              Informacje
+            </h3>
+            <ul className="text-sm text-gray-400 space-y-1">
+              <li>• Możesz utworzyć maksymalnie 5 własnych nagród</li>
+              <li>• Nagrody imienna są chronione i nie można ich usunąć</li>
+              <li>• Możesz wybrać ikonę Lucide lub przesłać własny obrazek</li>
+              <li>• Nagrody możesz przyznawać klipom w szczegółach klipu</li>
+              <li>• Każda nagroda ma unikalny kolor i opis</li>
+            </ul>
+          </div>
+        </>
       )}
 
       {showCreateModal && (
         <CreateAwardModal
           onClose={() => setShowCreateModal(false)}
-          onSuccess={fetchCustomAwards}
+          onSuccess={() => {
+            fetchData();
+            setShowCreateModal(false);
+          }}
         />
       )}
 
@@ -187,7 +272,7 @@ function MyAwardsPage() {
           award={editingAward}
           onClose={() => setEditingAward(null)}
           onSuccess={() => {
-            fetchCustomAwards();
+            fetchData();
             setEditingAward(null);
           }}
         />
