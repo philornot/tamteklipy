@@ -1,5 +1,6 @@
 """
 Router dla zarządzania plikami — upload, download, listowanie klipów i screenshotów
+Z CACHE
 """
 import hashlib
 import io
@@ -11,6 +12,7 @@ from pathlib import Path
 from typing import List, Optional
 
 import aiofiles
+from app.core.cache import cache_key_builder  # NOWE
 from app.core.config import settings
 from app.core.database import engine
 from app.core.database import get_db
@@ -24,6 +26,7 @@ from app.schemas.clip import ClipResponse, ClipListResponse, ClipDetailResponse
 from app.services.thumbnail_service import generate_thumbnail, extract_video_metadata
 from fastapi import APIRouter, UploadFile, File, Depends, Request
 from fastapi.responses import FileResponse, StreamingResponse
+from fastapi_cache.decorator import cache  # NOWE
 from pydantic import BaseModel, Field
 from sqlalchemy import desc, asc
 from sqlalchemy.exc import SQLAlchemyError
@@ -125,6 +128,7 @@ async def upload_file(
 ):
     """
     Upload pliku z pełną walidacją i error handling
+    INVALIDUJE CACHE po uploadzpie
     """
     logger.info(f"Upload from {current_user.username}: {file.filename} ({file.content_type})")
 
@@ -290,6 +294,14 @@ async def upload_file(
                 operation="create_clip"
             )
 
+        # Invaliduj cache po upload
+        try:
+            from app.core.cache import invalidate_cache
+            await invalidate_cache("clips:*")
+            logger.info("Cache invalidated after upload")
+        except Exception as e:
+            logger.warning(f"Failed to invalidate cache: {e}")
+
         # 11. Zwróć sukces
         response = {
             "message": "Plik został przesłany pomyślnie",
@@ -323,8 +335,11 @@ async def upload_file(
         )
 
 
+# Cache na 30s z custom key builder
 @router.get("/clips", response_model=ClipListResponse)
+@cache(expire=30, key_builder=cache_key_builder)
 async def list_clips(
+        request: Request,  # WYMAGANE dla cache_key_builder
         page: int = 1,
         limit: int = 50,
         sort_by: str = "created_at",
@@ -336,6 +351,7 @@ async def list_clips(
 ):
     """
     Listowanie klipów z paginacją, sortowaniem i filtrowaniem
+    CACHED 30s
 
     GET /api/files/clips?page=1&limit=50&sort_by=created_at&sort_order=desc&clip_type=video
 
@@ -347,6 +363,10 @@ async def list_clips(
         - clip_type: Filtr typu (video, screenshot)
         - uploader_id: Filtr po uploaderze
     """
+
+    logger.debug(f"🎯 list_clips endpoint called - should be cached for 30s")
+    logger.debug(f"📊 Params: page={page}, limit={limit}, sort_by={sort_by}, clip_type={clip_type}")
+
     # Walidacja parametrów
     if page < 1:
         page = 1
@@ -438,15 +458,14 @@ async def list_clips(
         for award_name, count in award_counts.items():
             award_type = award_types_map.get(award_name)
 
-            # FIX: Sprawdź custom_icon_path zamiast icon_path
             icon_url = f"/api/admin/award-types/{award_type.id}/icon" if (
-                        award_type and award_type.custom_icon_path) else None
+                    award_type and award_type.custom_icon_path) else None
 
             award_icons.append({
                 "award_name": award_name,
                 "icon_url": icon_url,
                 "icon": award_type.icon if award_type else "🏆",
-                "lucide_icon": award_type.lucide_icon if award_type else None,  # DODAJ TO
+                "lucide_icon": award_type.lucide_icon if award_type else None,
                 "count": count
             })
 
@@ -469,7 +488,7 @@ async def list_clips(
             )
         )
 
-    pages = (total + limit - 1) // limit  # Dodano wyliczanie liczby stron
+    pages = (total + limit - 1) // limit
 
     return ClipListResponse(
         clips=clips_response,
@@ -480,14 +499,18 @@ async def list_clips(
     )
 
 
+# Cache na 5min
 @router.get("/clips/{clip_id}", response_model=ClipDetailResponse)
+@cache(expire=300, key_builder=cache_key_builder)
 async def get_clip(
+        request: Request,  # WYMAGANE dla cache_key_builder
         clip_id: int,
         db: Session = Depends(get_db),
         current_user: User = Depends(get_current_user)
 ):
     """
     Pobierz szczegóły pojedynczego klipa z nagrodami
+    CACHED 5min
 
     GET /api/files/clips/{clip_id}
     """
@@ -580,6 +603,7 @@ async def download_clip(
             "Accept-Ranges": "bytes"
         }
     )
+
 
 class BulkDownloadRequest(BaseModel):
     """Request body dla bulk download"""
@@ -895,7 +919,6 @@ def check_disk_space(storage_path: Path, required_bytes: int) -> bool:
         return True
 
 
-# todo: sugestie co do hashowania: dodaj pole `file_hash` do modelu `Clip`, utwórz migrację Alembic, indeksuj `file_hash` w bazie
 def calculate_file_hash(file_content: bytes) -> str:
     """
     Oblicza SHA256 hash pliku

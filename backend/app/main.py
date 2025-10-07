@@ -5,6 +5,7 @@ import logging
 import time
 from pathlib import Path
 
+from app.core.cache import init_cache  # NOWE
 from app.core.config import settings
 from app.core.database import engine
 from app.core.error_handlers import (
@@ -22,9 +23,9 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from sqlalchemy.exc import SQLAlchemyError
-from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from sqlalchemy.exc import SQLAlchemyError
 
 # Konfiguracja logowania
 setup_logging(log_level="INFO")
@@ -66,20 +67,34 @@ async def log_requests(request: Request, call_next):
     """Middleware do logowania requestów i mierzenia czasu odpowiedzi"""
     start_time = time.time()
 
-    # Loguj też CORS preflight
-    if request.method == "OPTIONS":
-        origin = request.headers.get("origin", "unknown")
-        logger.info(f"CORS Preflight: {request.url.path} from {origin}")
-    else:
-        logger.info(f"Request: {request.method} {request.url.path}")
+    # Loguj cache-related headers
+    cache_headers = {
+        "if-none-match": request.headers.get("if-none-match"),
+        "if-modified-since": request.headers.get("if-modified-since"),
+        "cache-control": request.headers.get("cache-control"),
+    }
+    logger.debug(f"📨 Cache headers: {cache_headers}")
 
     response = await call_next(request)
 
     process_time = time.time() - start_time
     response.headers["X-Process-Time"] = str(process_time)
+
+    # Sprawdź czy response ma cache headers
+    response_cache_headers = {
+        "etag": response.headers.get("etag"),
+        "cache-control": response.headers.get("cache-control"),
+        "expires": response.headers.get("expires"),
+    }
+    logger.debug(f"📤 Response cache headers: {response_cache_headers}")
+
+    # Dodaj header X-Cache dla debugowania
+    cache_status = response.headers.get("X-Cache", "MISS")
+    logger.debug(f"🏷️ Cache status: {cache_status}")
+
     logger.info(
         f"Response: {request.method} {request.url.path} "
-        f"[Status: {response.status_code}] [Time: {process_time:.3f}s]"
+        f"[Status: {response.status_code}] [Time: {process_time:.3f}s] [Cache: {cache_status}]"
     )
 
     return response
@@ -100,6 +115,15 @@ async def startup_event():
         logger.info("Baza danych gotowa")
     except Exception as e:
         logger.error(f"Błąd inicjalizacji bazy danych: {e}")
+
+    # Inicjalizuj cache z Redis
+    try:
+        redis_url = settings.redis_url
+        init_cache(redis_url=redis_url)
+        logger.info(f"Cache initialized with Redis: {redis_url}")
+    except Exception as e:
+        logger.error(f"Redis cache init failed: {e}, falling back to InMemory")
+        init_cache(redis_url=None)
 
     # Utwórz katalog ikon nagród
     try:
@@ -169,6 +193,21 @@ async def health_check():
             "error": str(e)
         }
         health_status["status"] = "degraded"
+
+    # Sprawdź cache
+    try:
+        from fastapi_cache import FastAPICache
+        backend = FastAPICache.get_backend()
+        health_status["checks"]["cache"] = {
+            "status": "ok",
+            "backend": type(backend).__name__
+        }
+    except Exception as e:
+        logger.error(f"Cache check failed: {e}")
+        health_status["checks"]["cache"] = {
+            "status": "error",
+            "error": str(e)
+        }
 
     # Sprawdź dostęp do storage (tylko w produkcji/na RPi)
     if settings.environment == "production":

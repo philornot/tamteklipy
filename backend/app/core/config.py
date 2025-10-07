@@ -4,6 +4,7 @@ Konfiguracja aplikacji - zmienne środowiskowe
 import os
 from typing import List
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from typing import Optional
 
 
 # Pobierz environment PRZED utworzeniem klasy
@@ -48,6 +49,8 @@ class Settings(BaseSettings):
     smtp_port: int = 587
     smtp_user: str = ""
     smtp_password: str = ""
+
+    redis_url: Optional[str] = None
 
     model_config = SettingsConfigDict(
         env_file=ENV_FILE,  # <-- UŻYWAJ ZMIENNEJ GLOBALNEJ, NIE ClassVar

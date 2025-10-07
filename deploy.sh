@@ -2,8 +2,8 @@
 # TamteKlipy - Uniwersalny Skrypt Deployment (Windows Git Bash + RPi)
 set -e
 
-# Wykryj środowisko
-if [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "cygwin" ]] || [[ -n "$WINDIR" ]]; then
+# Wykryj środowisko - ulepszona detekcja dla PowerShell i Git Bash
+if [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "cygwin" ]] || [[ -n "$WINDIR" ]] || [[ "$PWD" == *"Users"*"Windows"* ]] || [[ "$PWD" == *"C:"* ]] || [[ "$PWD" == "/c/"* ]] || [[ "$PWD" == "/mnt/c/"* ]]; then
     ENV="windows"
     PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 else
@@ -14,6 +14,7 @@ fi
 # Parsuj argumenty
 DEPLOY_BACKEND=true
 DEPLOY_FRONTEND=true
+SKIP_LOCAL_COMMIT=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -25,6 +26,10 @@ while [[ $# -gt 0 ]]; do
             DEPLOY_BACKEND=false
             shift
             ;;
+        -p|--pull-only)
+            SKIP_LOCAL_COMMIT=true
+            shift
+            ;;
         -h|--help)
             echo "Użycie: $0 [OPCJE]"
             echo ""
@@ -32,6 +37,7 @@ while [[ $# -gt 0 ]]; do
             echo "  (brak)           Pełny deployment (backend + frontend)"
             echo "  -b, --backend    Tylko backend"
             echo "  -f, --frontend   Tylko frontend"
+            echo "  -p, --pull-only  Tylko pull na RPi (bez lokalnych commitów)"
             echo "  -h, --help       Pokaż tę pomoc"
             exit 0
             ;;
@@ -64,20 +70,25 @@ cd "$PROJECT_DIR"
 # DEPLOYMENT NA WINDOWS
 # ============================================
 if [ "$ENV" = "windows" ]; then
-    echo "📦 [1/4] Commitowanie i pushowanie zmian..."
-
-    # Sprawdź czy są zmiany do commitowania
-    if [[ -n $(git status -s) ]]; then
-        read -p "💬 Wiadomość commita: " commit_msg
-        git add .
-        git commit -m "$commit_msg"
-        git push
-        echo "✅ Zmiany wypchnięte na GitHub"
+    if [ "$SKIP_LOCAL_COMMIT" = true ]; then
+        echo "⏭️  [1/4] Pomijanie lokalnego commita (tryb pull-only)..."
+        echo ""
     else
-        echo "ℹ️  Brak zmian do commitowania"
-        git push
+        echo "📦 [1/4] Commitowanie i pushowanie zmian..."
+
+        # Sprawdź czy są zmiany do commitowania
+        if [[ -n $(git status -s) ]]; then
+            read -p "💬 Wiadomość commita: " commit_msg
+            git add .
+            git commit -m "$commit_msg"
+            git push
+            echo "✅ Zmiany wypchnięte na GitHub"
+        else
+            echo "ℹ️  Brak zmian do commitowania"
+            git push
+        fi
+        echo ""
     fi
-    echo ""
 
     # Build i przesłanie frontendu
     if [ "$DEPLOY_FRONTEND" = true ]; then

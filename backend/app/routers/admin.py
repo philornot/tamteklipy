@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import desc, asc
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, joinedload
+from app.core.cache import invalidate_cache
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -450,10 +451,8 @@ async def delete_clip(
 ):
     """
     Usuwa klip (soft delete) - tylko dla adminów
-
     DELETE /api/admin/clips/{clip_id}
     """
-    # Znajdź klip
     clip = db.query(Clip).filter(
         Clip.id == clip_id,
         Clip.is_deleted == False
@@ -463,26 +462,14 @@ async def delete_clip(
         raise NotFoundError(resource="Klip", resource_id=clip_id)
 
     try:
-        # Soft delete - oznacz jako usunięty
         clip.is_deleted = True
-
-        # Opcjonalnie: fizyczne usunięcie plików (zakomentowane dla bezpieczeństwa)
-        # Możesz odkomentować jeśli chcesz faktycznie usuwać pliki z dysku
-        """
-        if clip.file_path:
-            file_path = Path(clip.file_path)
-            if file_path.exists():
-                file_path.unlink()
-                logger.info(f"Deleted file: {file_path}")
-
-        if clip.thumbnail_path:
-            thumb_path = Path(clip.thumbnail_path)
-            if thumb_path.exists():
-                thumb_path.unlink()
-                logger.info(f"Deleted thumbnail: {thumb_path}")
-        """
-
         db.commit()
+
+        try:
+            await invalidate_cache("clips:*")
+            logger.info("Cache invalidated after clip deletion")
+        except Exception as e:
+            logger.warning(f"Failed to invalidate cache: {e}")
 
         logger.info(f"Admin {admin_user.username} deleted clip {clip_id} ({clip.filename})")
 
@@ -529,6 +516,12 @@ async def restore_clip(
         # Przywróć klip
         clip.is_deleted = False
         db.commit()
+
+        try:
+            await invalidate_cache("clips:*")
+            logger.info("Cache invalidated after clip restore")
+        except Exception as e:
+            logger.warning(f"Failed to invalidate cache: {e}")
 
         logger.info(f"Admin {admin_user.username} restored clip {clip_id} ({clip.filename})")
 
