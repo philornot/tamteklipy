@@ -2,7 +2,20 @@
 
 ## 🚀 Normalny deployment (99% przypadków)
 
-Na RPi uruchom:
+### Windows (Git Bash):
+
+```bash
+# W katalogu projektu
+bash deploy.sh
+```
+
+Skrypt automatycznie:
+- ✅ Commitujesz i pushujesz zmiany do GitHuba
+- ✅ Budujesz frontend lokalnie
+- ✅ Przesyłasz pliki na RPi przez SSH
+- ✅ Uruchamia deployment na RPi zdalnie
+
+### Na RPi:
 
 ```bash
 cd ~/tamteklipy
@@ -16,15 +29,51 @@ bash deploy.sh
 - ✅ Generuje bezpieczny SECRET_KEY
 - ✅ Inicjalizuje bazę danych
 - ✅ Tworzy admina jeśli baza pusta
-- ✅ Buduje frontend
-- ✅ Restartuje backend
+- ✅ Restartuje backend i frontend
 - ✅ Sprawdza czy wszystko działa
+
+---
+
+## 🔧 Opcje deploymentu
+
+Możesz deployować tylko część aplikacji:
+
+```bash
+# Tylko backend
+bash deploy.sh -b
+# lub
+bash deploy.sh --backend
+
+# Tylko frontend
+bash deploy.sh -f
+# lub
+bash deploy.sh --frontend
+
+# Pomoc
+bash deploy.sh -h
+# lub
+bash deploy.sh --help
+```
 
 ---
 
 ## 🔧 Workflow development → production
 
-### Na Windows (PyCharm):
+### Na Windows (PyCharm/Git Bash):
+
+Wystarczy uruchomić:
+```bash
+bash deploy.sh
+```
+
+Skrypt:
+1. Pyta o commit message (jeśli są zmiany)
+2. Commituje i pushujesz zmiany
+3. Buduje frontend
+4. Przesyła pliki na RPi
+5. Uruchamia deployment na RPi
+
+### Ręczny workflow (jeśli wolisz):
 
 1. Kodujesz
 2. `git add .`
@@ -97,21 +146,30 @@ bash deploy.sh  # Rebuild wszystkiego
 
 ---
 
-## 📁 Ważne pliki
+## 📁 Ważne pliki i katalogi
 
 ### Konfiguracja (nie w git):
 
 - `backend/.env` - konfiguracja produkcyjna backendu
+  - Zawiera: SECRET_KEY, ścieżki do plików, limity wielkości plików, itp.
 - `backend/tamteklipy.db` - baza danych SQLite
+- `frontend/.env.production` - URL backendu (w git ✅)
 
 ### Logi:
 
 - `backend/logs/tamteklipy.log` - wszystkie logi
 - `backend/logs/errors.log` - tylko błędy
 
+### Ścieżki plików:
+
+- `/mnt/tamteklipy/clips` - przesłane klipy wideo
+- `/mnt/tamteklipy/screenshots` - zrzuty ekranu
+- `/mnt/tamteklipy/thumbnails` - miniatury
+- `/mnt/tamteklipy/metadata` - metadane plików
+- `/mnt/tamteklipy/award_icons` - ikony odznaczeń
+
 ### Frontend:
 
-- `frontend/.env.production` - URL backendu (w git ✅)
 - `frontend/dist/` - zbudowana aplikacja
 
 ---
@@ -139,8 +197,14 @@ tail -f backend/logs/tamteklipy.log
 # Sprawdź status backendu
 sudo systemctl status tamteklipy-backend
 
+# Sprawdź status frontendu
+sudo systemctl status tamteklipy-frontend
+
 # Restart backendu
 sudo systemctl restart tamteklipy-backend
+
+# Restart frontendu
+sudo systemctl restart tamteklipy-frontend
 
 # Sprawdź czy API działa
 curl http://localhost:8000/health
@@ -167,4 +231,3 @@ db.close()
 - `backend/logs/` (logi)
 - `frontend/dist/` (build)
 - `backend/venv/` (virtual environment)
-
