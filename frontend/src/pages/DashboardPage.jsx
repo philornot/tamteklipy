@@ -12,14 +12,45 @@ function DashboardPage() {
     const [error, setError] = useState(null);
     const [hasMore, setHasMore] = useState(true);
     const [page, setPage] = useState(1);
+    const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
 
     const [searchParams, setSearchParams] = useSearchParams();
     const observerTarget = useRef(null);
+    const headerRef = useRef(null);
 
     // Parse query params
     const sortBy = searchParams.get("sort_by") || "created_at";
     const sortOrder = searchParams.get("sort_order") || "desc";
     const clipType = searchParams.get("clip_type") || "";
+
+    // Track mouse position for gradient effect
+    useEffect(() => {
+        const handleMouseMove = (e) => {
+            if (headerRef.current) {
+                const rect = headerRef.current.getBoundingClientRect();
+                const x = ((e.clientX - rect.left) / rect.width) * 100;
+                const y = ((e.clientY - rect.top) / rect.height) * 100;
+                setMousePosition({ x, y });
+            }
+        };
+
+        const headerElement = headerRef.current;
+        if (headerElement) {
+            headerElement.addEventListener('mousemove', handleMouseMove);
+        }
+
+        return () => {
+            if (headerElement) {
+                headerElement.removeEventListener('mousemove', handleMouseMove);
+            }
+        };
+    }, []);
+
+    // Calculate gradient angle based on mouse position
+    const calculateGradient = () => {
+        const angle = Math.atan2(mousePosition.y - 50, mousePosition.x - 50) * (180 / Math.PI);
+        return `linear-gradient(${angle}deg, #111827, rgba(30, 27, 75, 0.4), rgba(112, 26, 117, 0.3))`;
+    };
 
     const fetchClips = useCallback(async (pageNum, append = false) => {
         if (append) {
@@ -49,11 +80,7 @@ function DashboardPage() {
                 setClips(response.data.clips);
             }
 
-            // Sprawdź czy są jeszcze kolejne strony
             setHasMore(response.data.page < response.data.pages);
-
-            // HTTP/2 Server Push działa automatycznie przez Link header
-            // Przeglądarka automatycznie pobierze thumbnails w tle
             console.log("✓ Clips fetched, thumbnails preloaded via HTTP/2 Server Push");
 
         } catch (err) {
@@ -147,20 +174,25 @@ function DashboardPage() {
     }
 
     return (
-        <div className="container mx-auto px-4 py-8">
-            {/* Header z akcentem */}
+        <div className="container mx-auto px-4 py-8 min-h-screen">
+            {/* Header z dynamicznym gradientem */}
             <div className="mb-8 relative">
                 <div className="absolute -left-20 -top-20 w-64 h-64 bg-purple-500/5 rounded-full blur-3xl pointer-events-none"/>
                 <div className="absolute -right-20 -top-10 w-80 h-80 bg-fuchsia-500/5 rounded-full blur-3xl pointer-events-none"/>
 
-                <div className="relative bg-gradient-to-br from-gray-800/40 to-gray-800/10 rounded-2xl p-6 border border-purple-500/10 backdrop-blur-sm">
+                <div
+                    ref={headerRef}
+                    className="relative rounded-2xl p-6 border border-purple-500/20 backdrop-blur-sm transition-all duration-200"
+                    style={{
+                        background: calculateGradient()
+                    }}
+                >
                     <div className="flex items-center justify-between">
                         <div>
                             <div className="flex items-center gap-3 mb-2">
                                 <h1 className="text-4xl font-bold bg-gradient-to-r from-purple-400 via-fuchsia-400 to-purple-300 bg-clip-text text-transparent drop-shadow-lg">
                                     Dashboard
                                 </h1>
-                                <Sparkles className="text-purple-400" size={28}/>
                             </div>
                             <p className="text-gray-400 text-sm">
                                 {clips.length} {clips.length === 1 ? "klip" : "klipów"} załadowanych
@@ -181,40 +213,50 @@ function DashboardPage() {
             <ClipGrid clips={clips} loading={false}/>
 
             {/* Intersection Observer Target */}
-            <div ref={observerTarget} className="h-20 flex items-center justify-center">
+            <div ref={observerTarget} className="py-12 flex items-center justify-center">
                 {loadingMore && (
-                    <div className="flex items-center gap-2 text-purple-400">
+                    <div className="flex items-center gap-3 text-purple-400 bg-gray-800/50 px-6 py-3 rounded-xl border border-purple-500/20">
                         <div className="relative">
                             <Loader className="animate-spin" size={24}/>
                             <div className="absolute inset-0 blur-md bg-purple-500/30 animate-pulse"/>
                         </div>
-                        <span>Ładowanie kolejnych klipów...</span>
+                        <span className="font-medium">Ładowanie kolejnych klipów...</span>
                     </div>
                 )}
 
                 {!hasMore && clips.length > 0 && (
-                    <div className="text-center">
-                        <p className="text-gray-500 text-sm mb-2">
+                    <div className="text-center space-y-4">
+                        <p className="text-gray-400 text-sm font-medium">
                             Wszystkie klipy zostały załadowane
                         </p>
-                        <div className="w-16 h-1 bg-gradient-to-r from-transparent via-purple-500/30 to-transparent mx-auto rounded-full"/>
+                        <div className="relative w-32 h-1 mx-auto rounded-full overflow-hidden bg-gray-800">
+                            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-purple-500 to-transparent animate-pulse"/>
+                        </div>
                     </div>
                 )}
             </div>
 
-            {/* Fallback: Load More button z akcentem */}
+            {/* Load More button */}
             {!loadingMore && hasMore && clips.length > 0 && (
-                <div className="flex justify-center mt-8">
+                <div className="flex justify-center pb-12">
                     <button
                         onClick={() => {
                             const nextPage = page + 1;
                             setPage(nextPage);
                             fetchClips(nextPage, true);
                         }}
-                        className="relative px-6 py-3 bg-gradient-to-r from-purple-600 to-lavender-600 hover:from-purple-700 hover:to-lavender-700 text-white rounded-lg transition-all duration-300 shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40 hover:scale-105"
+                        className="group relative px-8 py-4 bg-gray-900/80 hover:bg-gray-800/90 border border-purple-500/30 hover:border-purple-400/50 text-white font-medium rounded-xl transition-all duration-300 shadow-lg hover:shadow-purple-500/20 hover:shadow-xl backdrop-blur-sm overflow-hidden"
                     >
-                        <span className="relative z-10">Załaduj więcej</span>
-                        <div className="absolute inset-0 rounded-lg bg-gradient-to-r from-purple-400/0 via-white/20 to-purple-400/0 opacity-0 hover:opacity-100 transition-opacity duration-300"/>
+                        {/* Animated background gradient */}
+                        <div className="absolute inset-0 bg-gradient-to-r from-purple-600/10 via-fuchsia-500/10 to-purple-600/10 opacity-0 group-hover:opacity-100 transition-opacity duration-500 group-hover:animate-pulse"/>
+
+                        {/* Shine effect */}
+                        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 -translate-x-full group-hover:translate-x-full group-hover:duration-1000"/>
+
+                        <span className="relative z-10 flex items-center gap-3 text-gray-100 group-hover:text-white">
+                            Załaduj więcej
+                            <Sparkles size={18} className="text-purple-400 group-hover:text-fuchsia-300 group-hover:animate-pulse transition-colors duration-300"/>
+                        </span>
                     </button>
                 </div>
             )}
