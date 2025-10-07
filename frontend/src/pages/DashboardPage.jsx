@@ -3,7 +3,7 @@ import {useSearchParams} from "react-router-dom";
 import api from "../services/api";
 import ClipGrid from "../components/clips/ClipGrid";
 import SortFilter from "../components/ui/SortFilter";
-import {AlertCircle, Loader} from "lucide-react";
+import {AlertCircle, Loader, Sparkles} from "lucide-react";
 
 function DashboardPage() {
     const [clips, setClips] = useState([]);
@@ -126,7 +126,10 @@ function DashboardPage() {
     if (loading && clips.length === 0) {
         return (
             <div className="container mx-auto px-4 py-8 flex items-center justify-center min-h-[60vh]">
-                <Loader className="animate-spin text-blue-500" size={48}/>
+                <div className="relative">
+                    <Loader className="animate-spin text-purple-500" size={48}/>
+                    <div className="absolute inset-0 blur-xl bg-purple-500/20 animate-pulse"/>
+                </div>
             </div>
         );
     }
@@ -145,11 +148,26 @@ function DashboardPage() {
 
     return (
         <div className="container mx-auto px-4 py-8">
-            <div className="mb-6">
-                <h1 className="text-3xl font-bold mb-2">Dashboard</h1>
-                <p className="text-gray-400">
-                    {clips.length} {clips.length === 1 ? "klip" : "klipów"} załadowanych
-                </p>
+            {/* Header z akcentem */}
+            <div className="mb-8 relative">
+                <div className="absolute -left-20 -top-20 w-64 h-64 bg-purple-500/5 rounded-full blur-3xl pointer-events-none"/>
+                <div className="absolute -right-20 -top-10 w-80 h-80 bg-fuchsia-500/5 rounded-full blur-3xl pointer-events-none"/>
+
+                <div className="relative bg-gradient-to-br from-gray-800/40 to-gray-800/10 rounded-2xl p-6 border border-purple-500/10 backdrop-blur-sm">
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <div className="flex items-center gap-3 mb-2">
+                                <h1 className="text-4xl font-bold bg-gradient-to-r from-purple-400 via-fuchsia-400 to-purple-300 bg-clip-text text-transparent drop-shadow-lg">
+                                    Dashboard
+                                </h1>
+                                <Sparkles className="text-purple-400" size={28}/>
+                            </div>
+                            <p className="text-gray-400 text-sm">
+                                {clips.length} {clips.length === 1 ? "klip" : "klipów"} załadowanych
+                            </p>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <SortFilter
@@ -165,20 +183,26 @@ function DashboardPage() {
             {/* Intersection Observer Target */}
             <div ref={observerTarget} className="h-20 flex items-center justify-center">
                 {loadingMore && (
-                    <div className="flex items-center gap-2 text-gray-400">
-                        <Loader className="animate-spin" size={24}/>
+                    <div className="flex items-center gap-2 text-purple-400">
+                        <div className="relative">
+                            <Loader className="animate-spin" size={24}/>
+                            <div className="absolute inset-0 blur-md bg-purple-500/30 animate-pulse"/>
+                        </div>
                         <span>Ładowanie kolejnych klipów...</span>
                     </div>
                 )}
 
                 {!hasMore && clips.length > 0 && (
-                    <p className="text-gray-500 text-sm">
-                        Wszystkie klipy zostały załadowane
-                    </p>
+                    <div className="text-center">
+                        <p className="text-gray-500 text-sm mb-2">
+                            Wszystkie klipy zostały załadowane
+                        </p>
+                        <div className="w-16 h-1 bg-gradient-to-r from-transparent via-purple-500/30 to-transparent mx-auto rounded-full"/>
+                    </div>
                 )}
             </div>
 
-            {/* Fallback: Load More button */}
+            {/* Fallback: Load More button z akcentem */}
             {!loadingMore && hasMore && clips.length > 0 && (
                 <div className="flex justify-center mt-8">
                     <button
@@ -187,9 +211,10 @@ function DashboardPage() {
                             setPage(nextPage);
                             fetchClips(nextPage, true);
                         }}
-                        className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition"
+                        className="relative px-6 py-3 bg-gradient-to-r from-purple-600 to-lavender-600 hover:from-purple-700 hover:to-lavender-700 text-white rounded-lg transition-all duration-300 shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40 hover:scale-105"
                     >
-                        Załaduj więcej
+                        <span className="relative z-10">Załaduj więcej</span>
+                        <div className="absolute inset-0 rounded-lg bg-gradient-to-r from-purple-400/0 via-white/20 to-purple-400/0 opacity-0 hover:opacity-100 transition-opacity duration-300"/>
                     </button>
                 </div>
             )}

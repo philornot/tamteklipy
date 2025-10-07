@@ -76,13 +76,18 @@ function ClipCard({ clip }) {
     <>
       <div
         onClick={() => setShowModal(true)}
-        className="bg-gray-800 rounded-lg overflow-hidden border border-gray-700 hover:border-gray-600 transition cursor-pointer group"
+        className="bg-gradient-to-br from-gray-800 to-gray-800/80 rounded-xl overflow-hidden border border-gray-700 hover:border-purple-500/50 hover:shadow-2xl hover:shadow-purple-500/10 transition-all duration-500 cursor-pointer group relative"
       >
+        {/* Świecący akcent na hover */}
+        <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none">
+          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-purple-500 to-transparent"/>
+          <div className="absolute inset-0 bg-gradient-to-br from-purple-500/5 via-transparent to-fuchsia-500/5"/>
+        </div>
         {/* Thumbnail */}
         <div className="relative aspect-video bg-gray-900 flex items-center justify-center overflow-hidden">
           {thumbnailUrl ? (
             <picture>
-              {/* WebP source — przeglądarka automatycznie użyje, jeśli obsługuje */}
+              {/* WebP source – przeglądarka automatycznie użyje, jeśli obsługuje */}
               <source srcSet={thumbnailWebPUrl} type="image/webp" />
               {/* JPEG fallback */}
               <img
@@ -145,40 +150,44 @@ function ClipCard({ clip }) {
             </div>
           )}
 
-          {/* Play overlay */}
-          <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
-            <Play size={48} className="text-white" />
+          {/* Play overlay z fioletowym akcentem */}
+          <div className="absolute inset-0 bg-gradient-to-b from-purple-600/10 via-purple-900/30 to-black/70 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-500">
+            <div className="relative transform group-hover:scale-110 transition-transform duration-500">
+              <Play size={56} className="text-white drop-shadow-2xl relative z-10" fill="rgba(255,255,255,0.9)" />
+              <div className="absolute inset-0 blur-2xl bg-purple-500/60 animate-pulse"/>
+              <div className="absolute inset-0 blur-3xl bg-fuchsia-500/40"/>
+            </div>
           </div>
         </div>
 
         {/* Info */}
-        <div className="p-4">
+        <div className="p-4 relative">
           <h3
-            className="font-semibold text-white truncate mb-2"
+            className="font-semibold text-white truncate mb-2 group-hover:bg-gradient-to-r group-hover:from-purple-300 group-hover:to-fuchsia-300 group-hover:bg-clip-text group-hover:text-transparent transition-all duration-300"
             title={clip.filename}
           >
             {clip.filename}
           </h3>
 
           <div className="flex items-center gap-4 text-sm text-gray-400 mb-3">
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1 group-hover:text-purple-300 transition-colors">
               <User size={14} />
               <span>{clip.uploader_username}</span>
             </div>
 
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1 group-hover:text-purple-300 transition-colors">
               <Calendar size={14} />
               <span>{formatDate(clip.created_at)}</span>
             </div>
           </div>
 
           <div className="flex items-center justify-between text-sm">
-            <div className="flex items-center gap-1 text-yellow-500">
-              <Award size={16} />
-              <span>{clip.award_count}</span>
+            <div className="flex items-center gap-1 text-yellow-500 group-hover:text-purple-400 transition-colors">
+              <Award size={16} className="group-hover:drop-shadow-lg group-hover:animate-pulse" />
+              <span className="font-medium">{clip.award_count}</span>
             </div>
 
-            <span className="text-gray-500">
+            <span className="text-gray-500 group-hover:text-purple-400 transition-colors">
               {formatFileSize(clip.file_size_mb)}
             </span>
           </div>
