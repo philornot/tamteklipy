@@ -232,8 +232,8 @@ function UploadPage() {
             </p>
 
             <div className="text-sm text-gray-500 space-y-1">
-              <p>Video: MP4, WebM, MOV (max 500MB)</p>
-              <p>Obrazy: PNG, JPG (max 10MB)</p>
+                <p>Video: MP4, WebM, MOV (max {MAX_VIDEO_SIZE / (1024 * 1024)}MB)</p>
+                <p>Obrazy: PNG, JPG (max {MAX_IMAGE_SIZE / (1024 * 1024)}MB)</p>
             </div>
           </label>
         </div>
