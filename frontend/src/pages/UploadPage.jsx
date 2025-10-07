@@ -12,8 +12,8 @@ import {
 import api from "../services/api";
 import toast from "react-hot-toast";
 
-const MAX_VIDEO_SIZE = 500 * 1024 * 1024; // 500MB
-const MAX_IMAGE_SIZE = 100 * 1024 * 1024; // 100MB
+const MAX_VIDEO_SIZE = 500 * 1024 * 1024;
+const MAX_IMAGE_SIZE = 100 * 1024 * 1024;
 const ALLOWED_VIDEO = ["video/mp4", "video/webm", "video/quicktime"];
 const ALLOWED_IMAGE = ["image/png", "image/jpeg", "image/jpg"];
 
@@ -31,13 +31,11 @@ function UploadPage() {
       const isVideo = ALLOWED_VIDEO.includes(file.type);
       const isImage = ALLOWED_IMAGE.includes(file.type);
 
-      // Sprawdź format
       if (!isVideo && !isImage) {
         toast.error(`${file.name}: Niedozwolony format pliku`);
         continue;
       }
 
-      // Sprawdź rozmiar
       const maxSize = isVideo ? MAX_VIDEO_SIZE : MAX_IMAGE_SIZE;
       if (file.size > maxSize) {
         const maxMB = Math.round(maxSize / (1024 * 1024));
@@ -64,7 +62,7 @@ function UploadPage() {
   const handleFileSelect = (e) => {
     if (e.target.files && e.target.files.length > 0) {
       validateAndAddFiles(e.target.files);
-      e.target.value = ""; // Reset input
+      e.target.value = "";
     }
   };
 
@@ -108,7 +106,6 @@ function UploadPage() {
     for (let i = 0; i < selectedFiles.length; i++) {
       const fileObj = selectedFiles[i];
 
-      // Skip already uploaded or failed files
       if (fileObj.status !== "pending") continue;
 
       try {
@@ -132,9 +129,6 @@ function UploadPage() {
           },
         });
 
-        // SUCCESS - status 200/201
-        console.log("Upload success:", response.data);
-
         setSelectedFiles((prev) =>
           prev.map((f, idx) =>
             idx === i ? { ...f, status: "success", progress: 100 } : f
@@ -144,9 +138,6 @@ function UploadPage() {
         successCount++;
         toast.success(`${fileObj.file.name} - przesłano!`);
       } catch (error) {
-        // ERROR
-        console.error("Upload error:", error);
-
         const errorMessage =
           error.response?.data?.detail ||
           error.response?.data?.message ||
@@ -168,7 +159,6 @@ function UploadPage() {
 
     setUploading(false);
 
-    // Podsumowanie
     if (successCount > 0 && errorCount === 0) {
       toast.success(`Wszystkie pliki przesłane (${successCount})`);
       setTimeout(() => navigate("/dashboard"), 1500);
@@ -204,8 +194,8 @@ function UploadPage() {
         <div
           className={`border-2 border-dashed rounded-lg p-12 text-center transition-colors ${
             dragActive
-              ? "border-blue-500 bg-blue-500/10"
-              : "border-gray-600 hover:border-gray-500"
+              ? "border-purple-500 bg-purple-500/10"
+              : "border-gray-600 hover:border-purple-500"
           } ${uploading ? "opacity-50 pointer-events-none" : ""}`}
           onDragEnter={handleDrag}
           onDragLeave={handleDrag}
@@ -317,7 +307,7 @@ function UploadPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
                       {fileObj.type === "video" ? (
-                        <FileVideo size={16} className="text-blue-400" />
+                        <FileVideo size={16} className="text-purple-400" />
                       ) : (
                         <ImageIcon size={16} className="text-green-400" />
                       )}
@@ -347,7 +337,7 @@ function UploadPage() {
 
                     {fileObj.status === "pending" && uploading && (
                       <div className="space-y-2">
-                        <div className="flex items-center gap-2 text-blue-400 text-sm">
+                        <div className="flex items-center gap-2 text-purple-400 text-sm">
                           <Loader size={14} className="animate-spin" />
                           <span>Wysyłanie... {fileObj.progress}%</span>
                         </div>
@@ -355,7 +345,7 @@ function UploadPage() {
                         {/* Progress bar */}
                         <div className="w-full bg-gray-700 rounded-full h-1.5 overflow-hidden">
                           <div
-                            className="bg-blue-500 h-full transition-all duration-300"
+                            className="bg-purple-500 h-full transition-all duration-300"
                             style={{ width: `${fileObj.progress}%` }}
                           />
                         </div>
@@ -391,7 +381,7 @@ function UploadPage() {
         <button
           onClick={handleUpload}
           disabled={uploading}
-          className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-3 px-6 rounded-lg transition-colors flex items-center justify-center gap-2"
+          className="w-full bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-3 px-6 rounded-lg transition-colors flex items-center justify-center gap-2"
         >
           {uploading ? (
             <>
@@ -409,29 +399,13 @@ function UploadPage() {
         </button>
       )}
 
-      {/* Info box */}
-      <div className="mt-8 bg-gray-800 rounded-lg p-4 border border-gray-700">
-        <h3 className="font-semibold mb-2 text-sm">Informacje</h3>
+      {/* Uproszczony info box */}
+      <div className="mt-8 bg-gray-800 rounded-lg p-4 border border-purple-700/30">
+        <h3 className="font-semibold mb-2 text-sm text-purple-400">Informacje</h3>
         <ul className="text-sm text-gray-400 space-y-1">
-          <li>• Możesz przesłać wiele plików naraz</li>
-          <li>
-            • Obsługiwane formaty video:{" "}
-            {ALLOWED_VIDEO.map((format) =>
-              format.split("/")[1].toUpperCase()
-            ).join(", ")}
-          </li>
-          <li>
-            • Obsługiwane formaty obrazów:{" "}
-            {ALLOWED_IMAGE.map((format) =>
-              format.split("/")[1].toUpperCase()
-            ).join(", ")}
-          </li>
-          <li>
-            • Maksymalny rozmiar video: {MAX_VIDEO_SIZE / (1024 * 1024)}MB
-          </li>
-          <li>
-            • Maksymalny rozmiar obrazu: {MAX_IMAGE_SIZE / (1024 * 1024)}MB
-          </li>
+          <li>• Wiele plików naraz</li>
+          <li>• Video: MP4, WebM, MOV (max {MAX_VIDEO_SIZE / (1024 * 1024)}MB)</li>
+          <li>• Obrazy: PNG, JPG (max {MAX_IMAGE_SIZE / (1024 * 1024)}MB)</li>
         </ul>
       </div>
     </div>

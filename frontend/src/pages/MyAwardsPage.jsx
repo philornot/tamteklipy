@@ -21,11 +21,9 @@ function MyAwardsPage() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      // Pobierz custom awards
       const awardsResponse = await api.get("/my-awards/my-award-types");
       setCustomAwards(awardsResponse.data);
 
-      // Pobierz szczegółowe info o award types
       const typesResponse = await api.get("/admin/award-types/detailed");
       const typesMap = {};
       typesResponse.data.forEach(type => {
@@ -58,7 +56,6 @@ function MyAwardsPage() {
     const awardType = awardTypesMap[award.id];
 
     if (!awardType) {
-      // Fallback na emoji jeśli nie ma info w mapie
       return (
         <div className="w-16 h-16 rounded bg-gray-700 flex items-center justify-center text-3xl">
           {award.icon || "🏆"}
@@ -66,7 +63,6 @@ function MyAwardsPage() {
       );
     }
 
-    // Custom icon (uploaded)
     if (awardType.icon_type === "custom" && awardType.icon_url) {
       return (
         <div className="w-16 h-16 rounded bg-gray-700 flex items-center justify-center overflow-hidden">
@@ -75,7 +71,6 @@ function MyAwardsPage() {
             alt={awardType.display_name}
             className="w-full h-full object-cover"
             onError={(e) => {
-              // Fallback na emoji przy błędzie ładowania
               e.target.style.display = 'none';
               const parent = e.target.parentElement;
               parent.innerHTML = `<span class="text-3xl">${awardType.icon || "🏆"}</span>`;
@@ -85,7 +80,6 @@ function MyAwardsPage() {
       );
     }
 
-    // Lucide icon
     if (awardType.icon_type === "lucide" && awardType.lucide_icon) {
       const componentName = awardType.lucide_icon
         .split("-")
@@ -102,7 +96,6 @@ function MyAwardsPage() {
       }
     }
 
-    // Emoji fallback
     return (
       <div className="w-16 h-16 rounded bg-gray-700 flex items-center justify-center text-3xl">
         {awardType.icon || award.icon || "🏆"}
@@ -122,7 +115,7 @@ function MyAwardsPage() {
   if (loading) {
     return (
       <div className="container mx-auto px-4 py-8 flex justify-center">
-        <Loader className="animate-spin text-blue-500" size={48} />
+        <Loader className="animate-spin text-purple-500" size={48} />
       </div>
     );
   }
@@ -135,7 +128,7 @@ function MyAwardsPage() {
           <button
             onClick={() => setShowCreateModal(true)}
             disabled={customAwards.length >= 5}
-            className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-lg transition-colors flex items-center gap-2"
+            className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-lg transition-colors flex items-center gap-2"
             title={
               customAwards.length >= 5 ? "Maksymalnie 5 nagród" : "Utwórz nagrodę"
             }
@@ -158,7 +151,7 @@ function MyAwardsPage() {
           </p>
           <button
             onClick={() => setShowCreateModal(true)}
-            className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors inline-flex items-center gap-2"
+            className="bg-purple-600 hover:bg-purple-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors inline-flex items-center gap-2"
           >
             <Sparkles size={20} />
             Utwórz pierwszą nagrodę
@@ -173,7 +166,7 @@ function MyAwardsPage() {
               return (
                 <div
                   key={award.id}
-                  className="bg-gray-800 rounded-lg p-5 border border-gray-700 hover:border-gray-600 transition-colors"
+                  className="bg-gray-800 rounded-lg p-5 border border-gray-700 hover:border-purple-600 transition-colors"
                 >
                   <div className="flex items-start gap-4 mb-4">
                     <div className="flex-shrink-0">{renderIcon(award)}</div>
@@ -184,7 +177,7 @@ function MyAwardsPage() {
                           {award.display_name}
                         </h3>
                         {award.is_personal && (
-                          <span className="text-xs bg-blue-600 px-2 py-0.5 rounded flex-shrink-0">
+                          <span className="text-xs bg-purple-600 px-2 py-0.5 rounded flex-shrink-0">
                             Imienna
                           </span>
                         )}
@@ -213,7 +206,7 @@ function MyAwardsPage() {
                   <div className="flex gap-2 pt-3 border-t border-gray-700">
                     <button
                       onClick={() => setEditingAward(award)}
-                      className="flex-1 py-2 px-3 text-blue-400 hover:text-blue-300 hover:bg-gray-700 rounded transition-colors flex items-center justify-center gap-2 text-sm font-medium"
+                      className="flex-1 py-2 px-3 text-purple-400 hover:text-purple-300 hover:bg-gray-700 rounded transition-colors flex items-center justify-center gap-2 text-sm font-medium"
                     >
                       <Edit2 size={16} />
                       Edytuj
@@ -240,18 +233,16 @@ function MyAwardsPage() {
             })}
           </div>
 
-          {/* Info box */}
-          <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
-            <h3 className="font-semibold mb-2 text-sm flex items-center gap-2">
-              <Sparkles size={16} className="text-yellow-500" />
+          {/* Uproszczony info box */}
+          <div className="bg-gray-800 rounded-lg p-4 border border-purple-700/30">
+            <h3 className="font-semibold mb-2 text-sm flex items-center gap-2 text-purple-400">
+              <Sparkles size={16} />
               Informacje
             </h3>
             <ul className="text-sm text-gray-400 space-y-1">
-              <li>• Możesz utworzyć maksymalnie 5 własnych nagród</li>
-              <li>• Nagrody imienna są chronione i nie można ich usunąć</li>
-              <li>• Możesz wybrać ikonę Lucide lub przesłać własny obrazek</li>
-              <li>• Nagrody możesz przyznawać klipom w szczegółach klipu</li>
-              <li>• Każda nagroda ma unikalny kolor i opis</li>
+              <li>• Maksymalnie 5 własnych nagród</li>
+              <li>• Nagrody imienne są chronione</li>
+              <li>• Ikony: Lucide lub własne obrazki</li>
             </ul>
           </div>
         </>
