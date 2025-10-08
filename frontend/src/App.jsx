@@ -9,7 +9,7 @@ import UploadPage from "./pages/UploadPage";
 import AdminPage from "./pages/AdminPage.jsx";
 import MyAwardsPage from "./pages/MyAwardsPage.jsx";
 import ProfilePage from "./pages/ProfilePage.jsx";
-import StatsPage from './pages/StatsPage'
+import StatsPage from './pages/StatsPage';
 
 function App() {
   const { user, logout } = useAuth();
