@@ -1,7 +1,9 @@
 import {Link} from "react-router-dom";
 import {Home, Search} from "lucide-react";
+import usePageTitle from "../hooks/usePageTitle.js";
 
 function NotFoundPage() {
+    usePageTitle("Strona nie znaleziona");
     return (
         <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
             <div className="text-center max-w-md">

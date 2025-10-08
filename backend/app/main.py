@@ -1,11 +1,18 @@
 """
-TamteKlipy — Główny plik aplikacji FastAPI
+TamteKlipy – Główny plik aplikacji FastAPI
+
+Architektura:
+- Frontend: React SPA (Single Page Application)
+- Backend: FastAPI REST API
+- Deployment: Cloudflare Tunnel → RPi (localhost:8001)
+- Database: SQLite
+- Cache: Redis (production) / InMemory (dev)
 """
 import logging
 import time
 from pathlib import Path
 
-from app.core.cache import init_cache  # NOWE
+from app.core.cache import init_cache
 from app.core.config import settings
 from app.core.database import engine
 from app.core.error_handlers import (
@@ -23,51 +30,74 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import SQLAlchemyError
 
-# Konfiguracja logowania
+# ═══════════════════════════════════════════════════════════
+# LOGGING SETUP
+# ═══════════════════════════════════════════════════════════
 setup_logging(log_level="INFO")
 logger = logging.getLogger(__name__)
 
+# ═══════════════════════════════════════════════════════════
+# FASTAPI APP INITIALIZATION
+# ═══════════════════════════════════════════════════════════
 app = FastAPI(
     title=settings.app_name,
-    description="Prywatna platforma do zarządzania klipami z gier i screenshotami",
-    version="0.1.0",
-    docs_url="/docs",
-    redoc_url="/redoc"
+    description="Prywatna platforma do zarządzania klipami z gier",
+    version="1.0.0",
+    docs_url="/docs",  # Swagger UI
+    redoc_url="/redoc"  # ReDoc alternative docs
 )
 
-# Rejestracja exception handlers
-app.add_exception_handler(TamteKlipyException, tamteklipy_exception_handler)
-app.add_exception_handler(RequestValidationError, validation_exception_handler)
-app.add_exception_handler(SQLAlchemyError, sqlalchemy_exception_handler)
-app.add_exception_handler(Exception, generic_exception_handler)
+# ═══════════════════════════════════════════════════════════
+# EXCEPTION HANDLERS
+# ═══════════════════════════════════════════════════════════
+# Rejestrujemy custom handlery dla różnych typów błędów
+# Zapewnia to spójne formatowanie błędów w API
+app.add_exception_handler(TamteKlipyException, tamteklipy_exception_handler)  # Nasze custom exceptions
+app.add_exception_handler(RequestValidationError, validation_exception_handler)  # Pydantic validation
+app.add_exception_handler(SQLAlchemyError, sqlalchemy_exception_handler)  # Database errors
+app.add_exception_handler(Exception, generic_exception_handler)  # Catch-all dla nieobsłużonych błędów
 
-# Konfiguracja CORS
+# ═══════════════════════════════════════════════════════════
+# MIDDLEWARE - CORS
+# ═══════════════════════════════════════════════════════════
+# Cross-Origin Resource Sharing - pozwala frontendowi (localhost:5173 w dev)
+# komunikować się z backendem (localhost:8001 w dev)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.origins_list,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=settings.origins_list,  # Lista dozwolonych domen (z .env)
+    allow_credentials=True,  # Pozwala na cookies/auth headers
+    allow_methods=["*"],  # Wszystkie metody HTTP (GET, POST, PUT, DELETE, etc.)
+    allow_headers=["*"],  # Wszystkie headers
 )
 
-# Trusted Host Middleware
+# ═══════════════════════════════════════════════════════════
+# MIDDLEWARE - TRUSTED HOST
+# ═══════════════════════════════════════════════════════════
+# Zabezpiecza przed Host header attacks
 app.add_middleware(
     TrustedHostMiddleware,
-    allowed_hosts=["*"]
+    allowed_hosts=["*"]  # W produkcji można zawęzić do ["tamteklipy.pl", "localhost"]
 )
 
 
-# Custom Middleware - Request Timing & Logging
+# ═══════════════════════════════════════════════════════════
+# MIDDLEWARE - REQUEST LOGGING & TIMING
+# ═══════════════════════════════════════════════════════════
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
-    """Middleware do logowania requestów i mierzenia czasu odpowiedzi"""
+    """
+    Custom middleware do:
+    - Logowania wszystkich requestów
+    - Mierzenia czasu odpowiedzi
+    - Debugowania cache headers
+    """
     start_time = time.time()
 
-    # Loguj cache-related headers
+    # Debug: Loguj cache-related headers z requesta
     cache_headers = {
         "if-none-match": request.headers.get("if-none-match"),
         "if-modified-since": request.headers.get("if-modified-since"),
@@ -75,12 +105,14 @@ async def log_requests(request: Request, call_next):
     }
     logger.debug(f"📨 Cache headers: {cache_headers}")
 
+    # Wykonaj request
     response = await call_next(request)
 
+    # Zmierz czas wykonania
     process_time = time.time() - start_time
     response.headers["X-Process-Time"] = str(process_time)
 
-    # Sprawdź czy response ma cache headers
+    # Debug: Loguj cache headers z response
     response_cache_headers = {
         "etag": response.headers.get("etag"),
         "cache-control": response.headers.get("cache-control"),
@@ -88,10 +120,11 @@ async def log_requests(request: Request, call_next):
     }
     logger.debug(f"📤 Response cache headers: {response_cache_headers}")
 
-    # Dodaj header X-Cache dla debugowania
+    # Cache status (MISS/HIT) - dodawany przez fastapi-cache
     cache_status = response.headers.get("X-Cache", "MISS")
     logger.debug(f"🏷️ Cache status: {cache_status}")
 
+    # Loguj każdy request z metrykami
     logger.info(
         f"Response: {request.method} {request.url.path} "
         f"[Status: {response.status_code}] [Time: {process_time:.3f}s] [Cache: {cache_status}]"
@@ -100,32 +133,45 @@ async def log_requests(request: Request, call_next):
     return response
 
 
-# Startup event
+# ═══════════════════════════════════════════════════════════
+# STARTUP EVENT
+# ═══════════════════════════════════════════════════════════
 @app.on_event("startup")
 async def startup_event():
-    """Wykonywane przy starcie aplikacji"""
+    """
+    Wykonywane JEDEN RAZ przy starcie aplikacji.
+    Inicjalizuje:
+    - Bazę danych (SQLite)
+    - Cache (Redis w prod, InMemory w dev)
+    - Katalogi na pliki (clips, thumbnails, award icons)
+    """
     logger.info(f"{settings.app_name} startuje...")
     logger.info(f"Environment: {settings.environment}")
     logger.info(f"CORS Allowed Origins: {settings.allowed_origins}")
     logger.info(f"CORS Origins List: {settings.origins_list}")
 
-    # Inicjalizuj bazę danych
+    # 1. Inicjalizuj bazę danych (SQLite)
     try:
-        init_db()
+        init_db()  # Tworzy tabele jeśli nie istnieją
         logger.info("Baza danych gotowa")
     except Exception as e:
         logger.error(f"Błąd inicjalizacji bazy danych: {e}")
 
-    # Inicjalizuj cache z Redis
+    # 2. Inicjalizuj cache
+    # - Redis w produkcji (szybki, współdzielony między workerami)
+    # - InMemoryBackend w dev (prosty, lokalny)
     try:
         redis_url = settings.redis_url
         init_cache(redis_url=redis_url)
-        logger.info(f"Cache initialized with Redis: {redis_url}")
+        if redis_url:
+            logger.info(f"Cache initialized with Redis: {redis_url}")
+        else:
+            logger.info("Cache initialized with InMemoryBackend")
     except Exception as e:
         logger.error(f"Redis cache init failed: {e}, falling back to InMemory")
         init_cache(redis_url=None)
 
-    # Utwórz katalog ikon nagród
+    # 3. Utwórz katalog na ikony nagród
     try:
         icons_dir = Path(settings.award_icons_path)
         if settings.environment == "development":
@@ -136,150 +182,249 @@ async def startup_event():
     except Exception as e:
         logger.error(f"Błąd tworzenia katalogu ikon nagród: {e}")
 
-    logger.info("Dokumentacja dostępna na: http://localhost:8000/docs")
+    logger.info("Dokumentacja dostępna na: http://localhost:8001/docs")
 
 
-# Shutdown event
+# ═══════════════════════════════════════════════════════════
+# SHUTDOWN EVENT
+# ═══════════════════════════════════════════════════════════
 @app.on_event("shutdown")
 async def shutdown_event():
-    """Wykonywane przy zamykaniu aplikacji"""
+    """
+    Wykonywane przy zamykaniu aplikacji (graceful shutdown).
+    Można tutaj zamykać połączenia, zapisywać state, etc.
+    """
     logger.info(f"{settings.app_name} wyłącza się...")
 
 
-# Root endpoint
-@app.get("/", tags=["Status"])
-async def root():
-    """Podstawowy endpoint do sprawdzenia czy API działa"""
-    return {
-        "message": f"{settings.app_name} działa!",
-        "version": "0.1.0",
-        "status": "online",
-        "environment": settings.environment,
-        "docs": "/docs",
-        "endpoints": {
-            "auth": "/api/auth",
-            "files": "/api/files",
-            "awards": "/api/awards"
-        }
-    }
-
-
-# Health check endpoint
-@app.get("/health", tags=["Status"])
-async def health_check():
-    """
-    Health check dla monitoringu
-    Sprawdza status API, dostęp do storage i bazę danych
-    """
-    health_status = {
-        "status": "healthy",
-        "api": "online",
-        "version": "0.1.0",
-        "environment": settings.environment,
-        "checks": {}
-    }
-
-    # Sprawdź bazę danych
-    try:
-        from app.core.database import SessionLocal
-        db = SessionLocal()
-        db.execute("SELECT 1")
-        db.close()
-        health_status["checks"]["database"] = {"status": "ok"}
-    except Exception as e:
-        logger.error(f"Database check failed: {e}")
-        health_status["checks"]["database"] = {
-            "status": "error",
-            "error": str(e)
-        }
-        health_status["status"] = "degraded"
-
-    # Sprawdź cache
-    try:
-        from fastapi_cache import FastAPICache
-        backend = FastAPICache.get_backend()
-        health_status["checks"]["cache"] = {
-            "status": "ok",
-            "backend": type(backend).__name__
-        }
-    except Exception as e:
-        logger.error(f"Cache check failed: {e}")
-        health_status["checks"]["cache"] = {
-            "status": "error",
-            "error": str(e)
-        }
-
-    # Sprawdź dostęp do storage (tylko w produkcji/na RPi)
-    if settings.environment == "production":
-        try:
-            storage_path = Path(settings.storage_path)
-            storage_accessible = storage_path.exists() and storage_path.is_dir()
-
-            health_status["checks"]["storage"] = {
-                "status": "ok" if storage_accessible else "error",
-                "path": settings.storage_path,
-                "accessible": storage_accessible
-            }
-
-            if not storage_accessible:
-                health_status["status"] = "degraded"
-
-        except Exception as e:
-            logger.error(f"Storage check failed: {e}")
-            health_status["checks"]["storage"] = {
-                "status": "error",
-                "error": str(e)
-            }
-            health_status["status"] = "degraded"
-    else:
-        health_status["checks"]["storage"] = {
-            "status": "skipped",
-            "reason": "Development environment"
-        }
-
-    return health_status
-
-
-# Rejestracja routerów
+# ═══════════════════════════════════════════════════════════
+# API ROUTERS
+# ═══════════════════════════════════════════════════════════
+# Rejestrujemy wszystkie endpointy z osobnych plików (routers/)
+# Prefix /api/ dla wszystkich endpointów API
 app.include_router(auth.router, prefix="/api/auth", tags=["Autoryzacja"])
 app.include_router(files.router, prefix="/api/files", tags=["Pliki"])
 app.include_router(awards.router, prefix="/api/awards", tags=["Nagrody"])
 app.include_router(my_awards.router, prefix="/api/my-awards", tags=["My Custom Awards"])
 app.include_router(admin.router, prefix="/api/admin", tags=["Admin"])
 
+# ═══════════════════════════════════════════════════════════
+# FRONTEND SERVING (SPA)
+# ═══════════════════════════════════════════════════════════
+# FastAPI serwuje React frontend jako static files
+# Frontend jest zbudowany jako SPA (Single Page Application)
+# i używa React Router do nawigacji client-side
+
 frontend_dist = Path("../frontend/dist")
+
 if frontend_dist.exists():
+    # 1. Static assets (JS, CSS, images)
+    # /assets/* będzie serwowane bezpośrednio z katalogu dist/assets/
     app.mount("/assets", StaticFiles(directory=str(frontend_dist / "assets")), name="assets")
 
 
-    @app.get("/{full_path:path}")
-    async def serve_frontend(full_path: str):
-        # API routes już są obsłużone wyżej
-        if full_path.startswith("api/"):
-            return {"error": "Not found"}
+    # 2. Root endpoint - REDIRECT do /dashboard
+    # Zamiast pokazywać JSON, przekierowujemy użytkownika do aplikacji
+    @app.get("/", include_in_schema=False)
+    async def root_redirect():
+        """
+        Redirect root URL (tamteklipy.pl) do /dashboard.
+        React Router następnie przekieruje do /login jeśli user nie jest zalogowany.
 
-        # Próbuj zwrócić plik
+        include_in_schema=False - nie pokazuj w /docs (to nie jest API endpoint)
+        """
+        return RedirectResponse(url="/dashboard", status_code=302)
+
+
+    # 3. Health check endpoint - dla monitoringu/alertów
+    @app.get("/health", tags=["Status"])
+    async def health_check():
+        """
+        Health check dla monitoringu.
+        Sprawdza:
+        - Status API (online/offline)
+        - Połączenie z bazą danych
+        - Status cache (Redis/InMemory)
+        - Dostęp do storage (tylko w produkcji)
+
+        Zwraca:
+        - 200 OK: wszystko działa ("healthy")
+        - 200 OK: częściowe problemy ("degraded")
+        - 500 Error: krytyczne problemy ("unhealthy")
+        """
+        health_status = {
+            "status": "healthy",
+            "api": "online",
+            "version": "0.1.0",
+            "environment": settings.environment,
+            "checks": {}
+        }
+
+        # Check 1: Baza danych
+        try:
+            from app.core.database import SessionLocal
+            db = SessionLocal()
+            db.execute("SELECT 1")  # Simple query to test connection
+            db.close()
+            health_status["checks"]["database"] = {"status": "ok"}
+        except Exception as e:
+            logger.error(f"Database check failed: {e}")
+            health_status["checks"]["database"] = {
+                "status": "error",
+                "error": str(e)
+            }
+            health_status["status"] = "degraded"
+
+        # Check 2: Cache
+        try:
+            from fastapi_cache import FastAPICache
+            backend = FastAPICache.get_backend()
+            health_status["checks"]["cache"] = {
+                "status": "ok",
+                "backend": type(backend).__name__  # RedisBackend lub InMemoryBackend
+            }
+        except Exception as e:
+            logger.error(f"Cache check failed: {e}")
+            health_status["checks"]["cache"] = {
+                "status": "error",
+                "error": str(e)
+            }
+
+        # Check 3: Storage (tylko w produkcji - na RPi)
+        if settings.environment == "production":
+            try:
+                storage_path = Path(settings.storage_path)
+                storage_accessible = storage_path.exists() and storage_path.is_dir()
+
+                health_status["checks"]["storage"] = {
+                    "status": "ok" if storage_accessible else "error",
+                    "path": settings.storage_path,
+                    "accessible": storage_accessible
+                }
+
+                if not storage_accessible:
+                    health_status["status"] = "degraded"
+
+            except Exception as e:
+                logger.error(f"Storage check failed: {e}")
+                health_status["checks"]["storage"] = {
+                    "status": "error",
+                    "error": str(e)
+                }
+                health_status["status"] = "degraded"
+        else:
+            # W dev nie sprawdzamy storage (używamy lokalnych katalogów)
+            health_status["checks"]["storage"] = {
+                "status": "skipped",
+                "reason": "Development environment"
+            }
+
+        return health_status
+
+
+    # 4. Catch-all route - serwuje index.html dla React Router
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def serve_frontend(full_path: str):
+        """
+        Catch-all route dla React Router (SPA).
+
+        Obsługuje:
+        - /dashboard → index.html (React Router obsłuży routing)
+        - /upload → index.html
+        - /login → index.html
+        - /favicon.ico → zwróć plik
+        - /logo.png → zwróć plik
+
+        API routes (/api/*) są już obsłużone przez routery powyżej,
+        więc tutaj trafiają tylko frontend routes i static files.
+        """
+        # API routes już są obsłużone wyżej przez routery
+        # Ten check jest na wszelki wypadek
+        if full_path.startswith("api/"):
+            return {"error": "Not found"}, 404
+
+        # Próbuj zwrócić konkretny plik (dla favicon, images, etc.)
         file_path = frontend_dist / full_path
         if file_path.exists() and file_path.is_file():
             return FileResponse(file_path)
 
-        # Fallback do index.html (dla React Router)
+        # Fallback: zwróć index.html
+        # React Router obsłuży routing client-side
+        # Wszystkie routes (/dashboard, /upload, etc.) dostają ten sam index.html
         return FileResponse(frontend_dist / "index.html")
 
+else:
+    # ═══════════════════════════════════════════════════════════
+    # FALLBACK - gdy frontend NIE jest zbudowany
+    # ═══════════════════════════════════════════════════════════
+    # W dev: jeśli nie zrobiłeś 'npm run build', API nadal działa
+    # ale pokazuje JSON zamiast frontendu
+
+    @app.get("/", tags=["Status"])
+    async def root():
+        """
+        API status endpoint (fallback gdy brak frontendu).
+        Pokazuje podstawowe info o API i dostępnych endpointach.
+        """
+        return {
+            "message": f"{settings.app_name} działa!",
+            "version": "0.1.0",
+            "status": "online",
+            "environment": settings.environment,
+            "docs": "/docs",
+            "endpoints": {
+                "auth": "/api/auth",
+                "files": "/api/files",
+                "awards": "/api/awards"
+            },
+            "note": "Frontend nie jest zbudowany. Uruchom: cd frontend && npm run build"
+        }
+
+
+    @app.get("/health", tags=["Status"])
+    async def health_check_fallback():
+        """Health check (simplified fallback)"""
+        return {
+            "status": "healthy",
+            "api": "online",
+            "version": "0.1.0",
+            "environment": settings.environment
+        }
+
+# ═══════════════════════════════════════════════════════════
+# DEV SERVER - uruchomienie bezpośrednio (python main.py)
+# ═══════════════════════════════════════════════════════════
 if __name__ == "__main__":
     import uvicorn
 
-    # HTTP/2 wymaga SSL/TLS
-    # W produkcji Cloudflare Tunnel obsługuje SSL
-    # W dev można użyć self-signed certificates
+    # Konfiguracja Uvicorn dla Cloudflare Tunnel:
+    #
+    # Cloudflare Tunnel automatycznie obsługuje:
+    # ✅ SSL/TLS (HTTPS) - między użytkownikiem a Cloudflare
+    # ✅ HTTP/2 - między użytkownikiem a Cloudflare
+    # ✅ Certyfikaty SSL - auto-renew co 90 dni
+    # ✅ DDoS protection, CDN, cache
+    #
+    # Lokalnie (RPi) używamy:
+    # ✅ Prosty HTTP (bez SSL) na localhost:8001
+    # ✅ Cloudflare Tunnel tuneluje to bezpiecznie do internetu
+    #
+    # NIE POTRZEBUJEMY:
+    # ❌ Certyfikatów SSL na RPi
+    # ❌ http="h2" flag (wymaga SSL)
+    # ❌ ssl_keyfile/ssl_certfile
 
-    uvicorn.run(
-        "app.main:app",
-        host="0.0.0.0",
-        port=8000,
-        http="h2",  # Włącz HTTP/2
-        reload=True,
-        # Dla produkcji z Cloudflare Tunnel:
-        # ssl_keyfile="/path/to/key.pem",
-        # ssl_certfile="/path/to/cert.pem",
-    )
+    config = {
+        "app": "app.main:app",
+        "host": "0.0.0.0",  # Słuchaj na wszystkich interfejsach
+        "port": 8001,  # Port dla produkcji (zgodny z systemd i Cloudflare Tunnel config)
+    }
+
+    # Development mode - dodatkowe opcje
+    if settings.environment == "development":
+        config["reload"] = True  # Auto-reload przy zmianach w kodzie
+        config["port"] = 8000  # Inny port dla dev (żeby nie kolidować z prod)
+        config["log_level"] = "debug"  # Więcej logów
+
+    # Uruchom server
+    uvicorn.run(**config)

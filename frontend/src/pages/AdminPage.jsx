@@ -6,8 +6,10 @@ import StatsPanel from "../components/admin/StatsPanel.jsx";
 import UsersManager from "../components/admin/UsersManager.jsx";
 import AwardTypesManager from "../components/admin/AwardTypesManager.jsx";
 import ClipsManager from "../components/admin/ClipsManager.jsx";
+import usePageTitle from "../hooks/usePageTitle.js";
 
 function AdminPage() {
+  usePageTitle("Admin Panel");
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState("clips");
 

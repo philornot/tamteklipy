@@ -1,16 +1,17 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  Upload,
-  X,
+  AlertCircle,
+  CheckCircle,
   FileVideo,
   Image as ImageIcon,
   Loader,
-  CheckCircle,
-  AlertCircle,
+  Upload,
+  X,
 } from "lucide-react";
 import api from "../services/api";
 import toast from "react-hot-toast";
+import { usePageTitle } from "../hooks/usePageTitle";
 
 const MAX_VIDEO_SIZE = 500 * 1024 * 1024;
 const MAX_IMAGE_SIZE = 100 * 1024 * 1024;
@@ -18,6 +19,7 @@ const ALLOWED_VIDEO = ["video/mp4", "video/webm", "video/quicktime"];
 const ALLOWED_IMAGE = ["image/png", "image/jpeg", "image/jpg"];
 
 function UploadPage() {
+  usePageTitle("Upload");
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [dragActive, setDragActive] = useState(false);
@@ -222,8 +224,10 @@ function UploadPage() {
             </p>
 
             <div className="text-sm text-gray-500 space-y-1">
-                <p>Video: MP4, WebM, MOV (max {MAX_VIDEO_SIZE / (1024 * 1024)}MB)</p>
-                <p>Obrazy: PNG, JPG (max {MAX_IMAGE_SIZE / (1024 * 1024)}MB)</p>
+              <p>
+                Video: MP4, WebM, MOV (max {MAX_VIDEO_SIZE / (1024 * 1024)}MB)
+              </p>
+              <p>Obrazy: PNG, JPG (max {MAX_IMAGE_SIZE / (1024 * 1024)}MB)</p>
             </div>
           </label>
         </div>
@@ -401,10 +405,14 @@ function UploadPage() {
 
       {/* Uproszczony info box */}
       <div className="mt-8 bg-gray-800 rounded-lg p-4 border border-purple-700/30">
-        <h3 className="font-semibold mb-2 text-sm text-purple-400">Informacje</h3>
+        <h3 className="font-semibold mb-2 text-sm text-purple-400">
+          Informacje
+        </h3>
         <ul className="text-sm text-gray-400 space-y-1">
           <li>• Wiele plików naraz</li>
-          <li>• Video: MP4, WebM, MOV (max {MAX_VIDEO_SIZE / (1024 * 1024)}MB)</li>
+          <li>
+            • Video: MP4, WebM, MOV (max {MAX_VIDEO_SIZE / (1024 * 1024)}MB)
+          </li>
           <li>• Obrazy: PNG, JPG (max {MAX_IMAGE_SIZE / (1024 * 1024)}MB)</li>
         </ul>
       </div>

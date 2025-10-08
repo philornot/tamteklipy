@@ -2,8 +2,10 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { LogIn, Loader } from "lucide-react";
+import usePageTitle from "../hooks/usePageTitle.js";
 
 function LoginPage() {
+  usePageTitle("Logowanie");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");

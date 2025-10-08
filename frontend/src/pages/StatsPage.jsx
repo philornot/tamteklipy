@@ -2,8 +2,10 @@ import { useState, useEffect } from 'react'
 import { TrendingUp, Users, Award, Film, AlertCircle, Loader } from 'lucide-react'
 import api from '../services/api'
 import { useAuth } from '../hooks/useAuth'
+import usePageTitle from "../hooks/usePageTitle.js";
 
 function StatsPage() {
+  usePageTitle("Statystyki");
   const { user } = useAuth()
   const [stats, setStats] = useState(null)
   const [loading, setLoading] = useState(true)

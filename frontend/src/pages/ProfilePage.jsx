@@ -3,8 +3,10 @@ import {useAuth} from "../hooks/useAuth";
 import {Loader, Lock, Mail, Save, User, LockOpen} from "lucide-react";
 import api from "../services/api";
 import toast from "react-hot-toast";
+import usePageTitle from "../hooks/usePageTitle.js";
 
 function ProfilePage() {
+    usePageTitle("Profil użytkownika");
     const {user, setUser} = useAuth();
     const [loading, setLoading] = useState(false);
     const [formData, setFormData] = useState({

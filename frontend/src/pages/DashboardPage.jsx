@@ -4,8 +4,10 @@ import api from "../services/api";
 import ClipGrid from "../components/clips/ClipGrid";
 import SortFilter from "../components/ui/SortFilter";
 import {AlertCircle, Loader, Sparkles} from "lucide-react";
+import usePageTitle from "../hooks/usePageTitle.js";
 
 function DashboardPage() {
+    usePageTitle("Dashboard");
     const [clips, setClips] = useState([]);
     const [loading, setLoading] = useState(true);
     const [loadingMore, setLoadingMore] = useState(false);

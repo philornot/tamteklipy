@@ -6,8 +6,10 @@ import toast from "react-hot-toast";
 import CreateAwardModal from "../components/awards/CreateAwardModal";
 import EditMyAwardModal from "../components/awards/EditMyAwardModal";
 import { getBaseUrl } from "../utils/urlHelper";
+import usePageTitle from "../hooks/usePageTitle.js";
 
 function MyAwardsPage() {
+  usePageTitle("Moje nagrody");
   const [customAwards, setCustomAwards] = useState([]);
   const [awardTypesMap, setAwardTypesMap] = useState({});
   const [loading, setLoading] = useState(true);
