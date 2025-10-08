@@ -345,11 +345,11 @@ async def upload_file(
         )
 
 
-# Cache na 30s z custom key builder
 @router.get("/clips", response_model=ClipListResponse)
 @cache(expire=30, key_builder=cache_key_builder)
 async def list_clips(
-        request: Request,  # WYMAGANE dla cache_key_builder
+        request: Request,
+        response: Response,
         page: int = 1,
         limit: int = 50,
         sort_by: str = "created_at",
@@ -361,17 +361,10 @@ async def list_clips(
 ):
     """
     Listowanie klipów z paginacją, sortowaniem i filtrowaniem
-    CACHED 30s
+    CACHED 30s + HTTP/2 Server Push dla pierwszych 5 thumbnails
+    OPTIMIZED: selectinload zamiast joinedload (O(N+M) zamiast O(N*M))
 
     GET /api/files/clips?page=1&limit=50&sort_by=created_at&sort_order=desc&clip_type=video
-
-    Query params:
-        - page: Numer strony (default: 1)
-        - limit: Liczba elementów na stronę (default: 50, max: 100)
-        - sort_by: Pole sortowania (created_at, filename, file_size, duration)
-        - sort_order: Kierunek sortowania (asc, desc)
-        - clip_type: Filtr typu (video, screenshot)
-        - uploader_id: Filtr po uploaderze
     """
 
     logger.debug(f"🎯 list_clips endpoint called - should be cached for 30s")
@@ -389,10 +382,15 @@ async def list_clips(
     # Oblicz offset
     offset = (page - 1) * limit
 
-    # Bazowe query
-    logger.info(f"Database URL: {engine.url}")
+    # Bazowe query z optymalizacją
+    from sqlalchemy.orm import selectinload
 
-    query = db.query(Clip).filter(Clip.is_deleted == False)
+    # ZMIANA: selectinload zamiast joinedload
+    # joinedload: O(N*M) - jeden wielki JOIN
+    # selectinload: O(N+M) - osobne query dla awards, potem łączy w pamięci
+    query = db.query(Clip).options(
+        selectinload(Clip.awards).selectinload(Award.user)
+    ).filter(Clip.is_deleted == False)
 
     # Filtrowanie po typie
     if clip_type:
@@ -436,15 +434,12 @@ async def list_clips(
     total = query.count()
     logger.info(f"Total clips found: {total}")
 
+    # Paginacja
+    clips = query.offset(offset).limit(limit).all()
+
+    # Przygotuj mapę AwardType (jeden query dla wszystkich typów)
     from app.models.award_type import AwardType
-    from sqlalchemy.orm import joinedload
 
-    # Pobierz nagrody dla klipów (eager loading)
-    clips = query.options(
-        joinedload(Clip.awards).joinedload(Award.user)
-    ).offset(offset).limit(limit).all()
-
-    # Przygotuj mapę AwardType
     all_award_names = set()
     for clip in clips:
         for award in clip.awards:
@@ -498,6 +493,33 @@ async def list_clips(
         )
 
     pages = (total + limit - 1) // limit
+
+    # ═══════════════════════════════════════════════════════════
+    # HTTP/2 SERVER PUSH - Link header dla pierwszych 5 thumbnails
+    # ═══════════════════════════════════════════════════════════
+    if clips_response:
+        link_headers = []
+
+        # Push tylko pierwsze 5 thumbnails (najbardziej widoczne)
+        for clip_resp in clips_response[:5]:
+            if clip_resp.has_thumbnail:
+                thumbnail_url = f"/api/files/thumbnails/{clip_resp.id}"
+
+                # Preferuj WebP jeśli dostępny (mniejszy rozmiar)
+                if clip_resp.has_webp_thumbnail:
+                    link_headers.append(
+                        f'<{thumbnail_url}>; rel=preload; as=image; type=image/webp'
+                    )
+                else:
+                    link_headers.append(
+                        f'<{thumbnail_url}>; rel=preload; as=image; type=image/jpeg'
+                    )
+
+        if link_headers:
+            # Ustaw Link header
+            response.headers["Link"] = ", ".join(link_headers)
+            logger.debug(f"📤 HTTP/2 Server Push enabled: {len(link_headers)} thumbnails")
+    # ═══════════════════════════════════════════════════════════
 
     return ClipListResponse(
         clips=clips_response,
