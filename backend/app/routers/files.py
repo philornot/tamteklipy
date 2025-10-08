@@ -24,7 +24,7 @@ from app.models.clip import Clip, ClipType
 from app.models.user import User
 from app.schemas.clip import ClipResponse, ClipListResponse, ClipDetailResponse
 from app.services.thumbnail_service import generate_thumbnail, extract_video_metadata
-from fastapi import APIRouter, UploadFile, File, Depends, Request
+from fastapi import APIRouter, UploadFile, File, Depends, Request, Response
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi_cache.decorator import cache
 from pydantic import BaseModel, Field
