@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import List
 from typing import Optional
 
+from app.core.cache import invalidate_cache
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
@@ -22,7 +23,6 @@ from pydantic import BaseModel, Field
 from sqlalchemy import desc, asc
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, joinedload
-from app.core.cache import invalidate_cache
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -989,6 +989,7 @@ async def delete_user(
     DELETE /api/admin/users/{user_id}
 
     Blokuje usunięcie samego siebie
+    Automatycznie usuwa nagrodę imienną użytkownika
     """
     # BLOKADA - nie można usunąć samego siebie
     if user_id == admin_user.id:
@@ -1002,18 +1003,43 @@ async def delete_user(
     if not user:
         raise NotFoundError(resource="Użytkownik", resource_id=user_id)
 
-    # Sprawdź czy user ma jakieś dane
+    # Sprawdź, czy user ma uploadowane klipy — to blokuje usunięcie
     clips_count = db.query(Clip).filter(Clip.uploader_id == user_id).count()
-    awards_count = db.query(Award).filter(Award.user_id == user_id).count()
 
-    if clips_count > 0 or awards_count > 0:
+    if clips_count > 0:
         raise ValidationError(
-            message=f"Nie można usunąć - użytkownik ma {clips_count} klipów i {awards_count} nagród",
+            message=f"Nie można usunąć - użytkownik ma {clips_count} klipów. Usuń najpierw klipy.",
             field="user_data",
-            details={"clips": clips_count, "awards": awards_count}
+            details={"clips": clips_count}
         )
 
+    # Znajdź wszystkie nagrody przyznane przez tego użytkownika
+    awards_to_delete = db.query(Award).filter(Award.user_id == user_id).all()
+    awards_count = len(awards_to_delete)
+
+    # Znajdź i usuń nagrodę imienną użytkownika (AwardType)
+    personal_award_name = f"award:personal_{user.username}"
+    personal_award_type = db.query(AwardType).filter(
+        AwardType.name == personal_award_name
+    ).first()
+
     try:
+        # Usuń najpierw nagrodę imienną, jeśli istnieje
+        if personal_award_type:
+            # Usuń plik ikony jeśli istnieje
+            if personal_award_type.custom_icon_path:
+                icon_path = Path(personal_award_type.custom_icon_path)
+                if icon_path.exists():
+                    try:
+                        icon_path.unlink()
+                        logger.info(f"Deleted personal award icon: {icon_path}")
+                    except OSError as e:
+                        logger.warning(f"Could not delete personal award icon: {e}")
+
+            db.delete(personal_award_type)
+            logger.info(f"Deleted personal award type: {personal_award_name}")
+
+        # Usuń użytkownika
         db.delete(user)
         db.commit()
         logger.info(f"Admin {admin_user.username} deleted user {user_id} ({user.username})")
@@ -1023,7 +1049,7 @@ async def delete_user(
         raise DatabaseError(message="Nie można usunąć użytkownika")
 
     return {
-        "message": "Użytkownik został usunięty",
+        "message": "Użytkownik został usunięty (wraz z nagrodą imienną)",
         "user_id": user_id,
         "username": user.username
     }
@@ -1047,7 +1073,7 @@ async def create_user(
     Utwórz nowego użytkownika (admin only)
     POST /api/admin/users
 
-    Użytkownik jest tworzony bez hasła - może je ustawić później w profilu
+    Użytkownik jest tworzony bez hasła — może je ustawić później w profilu
     """
     # Sprawdź duplikat username
     existing = db.query(User).filter(
