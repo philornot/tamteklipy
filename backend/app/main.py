@@ -207,6 +207,7 @@ app.include_router(files.router, prefix="/api/files", tags=["Pliki"])
 app.include_router(awards.router, prefix="/api/awards", tags=["Nagrody"])
 app.include_router(my_awards.router, prefix="/api/my-awards", tags=["My Custom Awards"])
 app.include_router(admin.router, prefix="/api/admin", tags=["Admin"])
+app.include_router(comments.router, prefix="/api", tags=["Komentarze"])
 
 # ═══════════════════════════════════════════════════════════
 # FRONTEND SERVING (SPA)

@@ -55,84 +55,42 @@ function CommentForm({
   }, [content]);
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
+  e.preventDefault();
 
-    if (!content.trim()) {
-      setError('Komentarz nie może być pusty');
-      return;
+  if (!content.trim()) {
+    setError('Komentarz nie może być pusty');
+    return;
+  }
+
+  if (content.length > 1000) {
+    setError('Komentarz nie może przekraczać 1000 znaków');
+    return;
+  }
+
+  setSubmitting(true);
+  setError(null);
+
+  try {
+    const response = await api.post(`/clips/${clipId}/comments`, {
+      content: content.trim(),
+      timestamp: timestamp,
+      parent_id: parentId
+    });
+
+    setContent('');
+    setTimestamp(null);
+    onCommentAdded(response.data);
+
+    if (onCancel) {
+      onCancel();
     }
-
-    if (content.length > 1000) {
-      setError('Komentarz nie może przekraczać 1000 znaków');
-      return;
-    }
-
-    setSubmitting(true);
-    setError(null);
-
-    try {
-      // TYMCZASOWE ROZWIĄZANIE: symulujemy dodanie komentarza bez wywołania API
-      // todo: Po naprawieniu backendu, należy zmienić na proper implementację
-
-      // Symulowana odpowiedź
-      const mockResponse = {
-        id: Math.floor(Math.random() * 10000), // Losowe ID
-        clip_id: clipId,
-        user_id: 1, // Zakładamy, że aktualny użytkownik ma ID 1
-        content: content.trim(),
-        timestamp: timestamp,
-        parent_id: parentId,
-        created_at: new Date().toISOString(),
-        edited_at: null,
-        is_deleted: false,
-        is_edited: false,
-        can_edit: true,
-        reply_count: 0,
-        user: {
-          id: 1,
-          username: "Aktualne konto", // To zostanie zastąpione prawdziwymi danymi
-          full_name: "",
-          is_admin: false
-        },
-        content_html: content.trim(),
-        mentioned_users: []
-      };
-
-      console.log("Symulowane dodanie komentarza:", mockResponse);
-
-      // Symulujemy opóźnienie odpowiedzi
-      setTimeout(() => {
-        setContent('');
-        setTimestamp(null);
-        onCommentAdded(mockResponse);
-
-        if (onCancel) {
-          onCancel();
-        }
-        setSubmitting(false);
-      }, 500);
-
-      /* ORYGINALNY KOD - DO PRZYWRÓCENIA PO NAPRAWIE BACKENDU
-      const response = await api.post(`/clips/${clipId}/comments`, {
-        content: content.trim(),
-        timestamp: timestamp,
-        parent_id: parentId
-      });
-
-      setContent('');
-      setTimestamp(null);
-      onCommentAdded(response.data);
-
-      if (onCancel) {
-        onCancel();
-      }
-      */
-    } catch (err) {
-      console.error('Failed to post comment:', err);
-      setError(err.response?.data?.message || 'Nie udało się dodać komentarza');
-      setSubmitting(false);
-    }
-  };
+  } catch (err) {
+    console.error('Failed to post comment:', err);
+    setError(err.response?.data?.message || 'Nie udało się dodać komentarza');
+  } finally {
+    setSubmitting(false);
+  }
+};
 
   const captureTimestamp = () => {
     if (videoRef?.current) {
