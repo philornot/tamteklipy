@@ -4,7 +4,7 @@ Inicjalizacja bazy danych — tworzenie tabel
 import logging
 
 from app.core.database import engine, Base, check_database_connection, get_database_info, SessionLocal
-from app.models import User, Clip, Award
+from app.models import User, Clip, Award, Comment
 from app.models.award_type import AwardType
 
 logger = logging.getLogger(__name__)

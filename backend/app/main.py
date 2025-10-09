@@ -25,7 +25,7 @@ from app.core.exceptions import TamteKlipyException
 from app.core.init_db import init_db
 from app.core.logging_config import setup_logging
 from app.models import User
-from app.routers import auth, files, awards, admin, my_awards
+from app.routers import auth, files, awards, admin, my_awards, comments
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware

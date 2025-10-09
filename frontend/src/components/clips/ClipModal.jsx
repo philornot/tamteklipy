@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import {
   X,
   Download,
@@ -9,11 +9,13 @@ import {
 } from "lucide-react";
 import api from "../../services/api";
 import AwardSection from "./AwardSection";
+import CommentSection from "../comments/CommentSection";
 import { getStreamUrl, getDownloadUrl } from "../../utils/urlHelper";
 
 function ClipModal({ clip, onClose }) {
   const [clipDetails, setClipDetails] = useState(null);
   const [loading, setLoading] = useState(true);
+  const videoRef = useRef(null);
 
   const fetchClipDetails = useCallback(async () => {
     try {
@@ -103,6 +105,7 @@ function ClipModal({ clip, onClose }) {
             <div className="lg:col-span-2">
               {clip.clip_type === "video" ? (
                 <video
+                  ref={videoRef}
                   controls
                   autoPlay
                   className="w-full rounded-lg bg-black"
@@ -168,6 +171,12 @@ function ClipModal({ clip, onClose }) {
                 <Download size={20} />
                 Pobierz ({clip.file_size_mb.toFixed(1)} MB)
               </button>
+
+              {/* Comments Section */}
+              <div className="mt-8 border-t border-gray-700 pt-6">
+                <h3 className="text-xl font-semibold mb-4">Komentarze</h3>
+                {!loading && <CommentSection clipId={clip.id} videoRef={clip.clip_type === "video" ? videoRef : null} />}
+              </div>
             </div>
 
             {/* Right: Awards Section */}
@@ -194,3 +203,4 @@ function ClipModal({ clip, onClose }) {
 }
 
 export default ClipModal;
+
