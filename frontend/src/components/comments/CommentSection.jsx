@@ -135,7 +135,7 @@ return (
         {comments.length === 0 ? (
           <div className="text-center py-12 text-gray-500">
             <MessageSquare size={48} className="mx-auto mb-3 opacity-30" />
-            <p className="text-sm">Bądź pierwszy, który skomentuje!</p>
+            <p className="text-sm">Dodaj pierwszy!</p>
           </div>
         ) : (
           comments.map(comment => (

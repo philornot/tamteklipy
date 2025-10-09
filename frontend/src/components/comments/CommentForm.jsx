@@ -133,13 +133,14 @@ function CommentForm({
         />
 
         {/* Mention Autocomplete */}
-        {showMentions && (
-          <MentionAutocomplete
-            query={mentionQuery}
-            onSelect={handleMentionSelect}
-            onClose={() => setShowMentions(false)}
-          />
-        )}
+        {/* todo: napraw autocomplete i mnie odkomentuj */}
+        {/*{showMentions && (*/}
+        {/*  <MentionAutocomplete*/}
+        {/*    query={mentionQuery}*/}
+        {/*    onSelect={handleMentionSelect}*/}
+        {/*    onClose={() => setShowMentions(false)}*/}
+        {/*  />*/}
+        {/*)}*/}
       </div>
 
       {/* Character counter */}
