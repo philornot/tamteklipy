@@ -42,6 +42,7 @@ class ClipResponse(BaseModel):
     has_thumbnail: bool = False
     has_webp_thumbnail: bool = False
     award_icons: List[dict] = []  # [{award_name, icon_url, count}]
+    comment_count: int = 0
 
     class Config:
         from_attributes = True
@@ -53,6 +54,9 @@ class ClipDetailResponse(ClipResponse):
     thumbnail_url: Optional[str] = None
     thumbnail_webp_url: Optional[str] = None
     download_url: str
+    comments_url: Optional[str] = None
+    # Przykład użycia w router:
+    # clip_response.comments_url = f"/api/clips/{clip.id}/comments"
 
     class Config:
         from_attributes = True

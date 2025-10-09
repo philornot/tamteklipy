@@ -55,6 +55,9 @@ class Clip(Base):
     uploader = relationship("User", back_populates="clips")
     awards = relationship("Award", back_populates="clip", cascade="all, delete-orphan")
 
+    # Komentarze
+    comments = relationship("Comment", back_populates="clip", cascade="all, delete-orphan")
+
     def __repr__(self):
         return f"<Clip(id={self.id}, filename='{self.filename}', type={self.clip_type}, uploader_id={self.uploader_id})>"
 
@@ -67,6 +70,14 @@ class Clip(Base):
     def file_size_mb(self) -> float:
         """Zwraca rozmiar pliku w MB"""
         return round(self.file_size / (1024 * 1024), 2) if self.file_size else 0
+
+    @property
+    def comment_count(self) -> int:
+        """Zwraca liczbę komentarzy (nie-usuniętych)"""
+        from app.models.comment import Comment
+        if not hasattr(self, '_comment_count'):
+            self._comment_count = len([c for c in self.comments if not c.is_deleted]) if self.comments else 0
+        return self._comment_count
 
     @validates('file_path', 'thumbnail_path')
     def validate_path_is_absolute(self, key, value):

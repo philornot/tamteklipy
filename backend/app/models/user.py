@@ -27,6 +27,9 @@ class User(Base):
     clips = relationship("Clip", back_populates="uploader", cascade="all, delete-orphan")
     awards_given = relationship("Award", back_populates="user", cascade="all, delete-orphan")
 
+    # Komentarze
+    comments = relationship("Comment", back_populates="user", cascade="all, delete-orphan")
+
     def __repr__(self):
         return f"<User(id={self.id}, username='{self.username}', email='{self.email}', admin={self.is_admin})>"
 

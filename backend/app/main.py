@@ -25,7 +25,7 @@ from app.core.exceptions import TamteKlipyException
 from app.core.init_db import init_db
 from app.core.logging_config import setup_logging
 from app.models import User
-from app.routers import auth, files, awards, admin, my_awards
+from app.routers import auth, files, awards, admin, my_awards, comments
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -207,6 +207,7 @@ app.include_router(files.router, prefix="/api/files", tags=["Pliki"])
 app.include_router(awards.router, prefix="/api/awards", tags=["Nagrody"])
 app.include_router(my_awards.router, prefix="/api/my-awards", tags=["My Custom Awards"])
 app.include_router(admin.router, prefix="/api/admin", tags=["Admin"])
+app.include_router(comments.router, prefix="/api", tags=["Komentarze"])
 
 # ═══════════════════════════════════════════════════════════
 # FRONTEND SERVING (SPA)
