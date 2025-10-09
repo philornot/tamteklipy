@@ -174,7 +174,6 @@ function ClipModal({ clip, onClose }) {
 
               {/* Comments Section */}
               <div className="mt-8 border-t border-gray-700 pt-6">
-                <h3 className="text-xl font-semibold mb-4">Komentarze</h3>
                 {!loading && <CommentSection clipId={clip.id} videoRef={clip.clip_type === "video" ? videoRef : null} />}
               </div>
             </div>
@@ -203,4 +202,3 @@ function ClipModal({ clip, onClose }) {
 }
 
 export default ClipModal;
-

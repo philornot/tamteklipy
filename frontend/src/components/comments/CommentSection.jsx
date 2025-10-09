@@ -113,16 +113,8 @@ function CommentSection({ clipId, videoRef = null }) {
     );
   }
 
-  return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center gap-2 pb-4 border-b border-gray-700">
-        <MessageSquare size={20} className="text-purple-400" />
-        <h3 className="text-lg font-semibold">
-          Komentarze {total > 0 && `(${total})`}
-        </h3>
-      </div>
-
+return (
+    <div className="space-y-4">
       {/* Comment Form */}
       <CommentForm
         clipId={clipId}
@@ -130,12 +122,20 @@ function CommentSection({ clipId, videoRef = null }) {
         onCommentAdded={handleCommentAdded}
       />
 
+      {/* Comments Header */}
+      <div className="flex items-center gap-2 text-gray-400">
+        <MessageSquare size={18} />
+        <span className="text-sm font-medium">
+          {total === 0 ? 'Brak komentarzy' : `${total} ${total === 1 ? 'komentarz' : total < 5 ? 'komentarze' : 'komentarzy'}`}
+        </span>
+      </div>
+
       {/* Comments List */}
       <div className="space-y-4">
         {comments.length === 0 ? (
-          <div className="text-center py-8 text-gray-400">
-            <MessageSquare size={48} className="mx-auto mb-2 opacity-50" />
-            <p>Brak komentarzy. Bądź pierwszy!</p>
+          <div className="text-center py-12 text-gray-500">
+            <MessageSquare size={48} className="mx-auto mb-3 opacity-30" />
+            <p className="text-sm">Bądź pierwszy, który skomentuje!</p>
           </div>
         ) : (
           comments.map(comment => (
@@ -156,7 +156,7 @@ function CommentSection({ clipId, videoRef = null }) {
       {hasMore && comments.length > 0 && (
         <button
           onClick={loadMoreComments}
-          className="w-full py-2 text-purple-400 hover:text-purple-300 text-sm font-medium transition"
+          className="w-full py-3 text-purple-400 hover:text-purple-300 hover:bg-gray-800/50 rounded-lg text-sm font-medium transition"
         >
           Załaduj więcej komentarzy
         </button>
