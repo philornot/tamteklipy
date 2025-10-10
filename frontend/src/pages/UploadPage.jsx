@@ -9,8 +9,8 @@ import {
   Upload,
   X,
 } from "lucide-react";
-import api from "../services/api";
 import toast from "react-hot-toast";
+import useOptimizedUpload from "../hooks/useOptimizedUpload";
 import { usePageTitle } from "../hooks/usePageTitle";
 
 const MAX_VIDEO_SIZE = 500 * 1024 * 1024;
@@ -20,11 +20,22 @@ const ALLOWED_IMAGE = ["image/png", "image/jpeg", "image/jpg"];
 
 function UploadPage() {
   usePageTitle("Upload");
+  const navigate = useNavigate();
+  const { uploadFile } = useOptimizedUpload();
+
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [dragActive, setDragActive] = useState(false);
-  const navigate = useNavigate();
 
+  /** Format rozmiaru pliku w MB/KB */
+  const formatFileSize = (bytes) => {
+    const mb = bytes / (1024 * 1024);
+    return mb < 1
+      ? `${(bytes / 1024).toFixed(0)} KB`
+      : `${mb.toFixed(1)} MB`;
+  };
+
+  /** Walidacja i dodanie plików */
   const validateAndAddFiles = (files) => {
     const fileArray = Array.from(files);
     const validFiles = [];
@@ -47,7 +58,7 @@ function UploadPage() {
 
       validFiles.push({
         file,
-        preview: URL.createObjectURL(file),
+        preview: URL.createObjectURL(/** @type {Blob} */ (file)),
         type: isVideo ? "video" : "image",
         status: "pending",
         progress: 0,
@@ -62,7 +73,7 @@ function UploadPage() {
   };
 
   const handleFileSelect = (e) => {
-    if (e.target.files && e.target.files.length > 0) {
+    if (e.target.files?.length > 0) {
       validateAndAddFiles(e.target.files);
       e.target.value = "";
     }
@@ -72,19 +83,15 @@ function UploadPage() {
     e.preventDefault();
     e.stopPropagation();
 
-    if (e.type === "dragenter" || e.type === "dragover") {
-      setDragActive(true);
-    } else if (e.type === "dragleave") {
-      setDragActive(false);
-    }
+    if (["dragenter", "dragover"].includes(e.type)) setDragActive(true);
+    else if (e.type === "dragleave") setDragActive(false);
   };
 
   const handleDrop = (e) => {
     e.preventDefault();
     e.stopPropagation();
     setDragActive(false);
-
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+    if (e.dataTransfer.files?.length > 0) {
       validateAndAddFiles(e.dataTransfer.files);
     }
   };
@@ -107,28 +114,21 @@ function UploadPage() {
 
     for (let i = 0; i < selectedFiles.length; i++) {
       const fileObj = selectedFiles[i];
-
       if (fileObj.status !== "pending") continue;
 
       try {
-        const formData = new FormData();
-        formData.append("file", fileObj.file);
+        setSelectedFiles((prev) =>
+          prev.map((f, idx) =>
+            idx === i ? { ...f, status: "uploading", progress: 0 } : f
+          )
+        );
 
-        const response = await api.post("/files/upload", formData, {
-          headers: { "Content-Type": "multipart/form-data" },
-          onUploadProgress: (progressEvent) => {
-            if (progressEvent.total) {
-              const percentCompleted = Math.round(
-                (progressEvent.loaded * 100) / progressEvent.total
-              );
-
-              setSelectedFiles((prev) =>
-                prev.map((f, idx) =>
-                  idx === i ? { ...f, progress: percentCompleted } : f
-                )
-              );
-            }
-          },
+        await uploadFile(fileObj.file, (progress) => {
+          setSelectedFiles((prev) =>
+            prev.map((f, idx) =>
+              idx === i ? { ...f, progress } : f
+            )
+          );
         });
 
         setSelectedFiles((prev) =>
@@ -140,7 +140,7 @@ function UploadPage() {
         successCount++;
         toast.success(`${fileObj.file.name} - przesłano!`);
       } catch (error) {
-        const errorMessage =
+        const msg =
           error.response?.data?.detail ||
           error.response?.data?.message ||
           error.message ||
@@ -149,13 +149,13 @@ function UploadPage() {
         setSelectedFiles((prev) =>
           prev.map((f, idx) =>
             idx === i
-              ? { ...f, status: "error", error: errorMessage, progress: 0 }
+              ? { ...f, status: "error", error: msg, progress: 0 }
               : f
           )
         );
 
         errorCount++;
-        toast.error(`${fileObj.file.name} - błąd: ${errorMessage}`);
+        toast.error(`${fileObj.file.name} - błąd: ${msg}`);
       }
     }
 
@@ -165,23 +165,13 @@ function UploadPage() {
       toast.success(`Wszystkie pliki przesłane (${successCount})`);
       setTimeout(() => navigate("/dashboard"), 1500);
     } else if (successCount > 0 && errorCount > 0) {
-      toast(`Sukces: ${successCount}, Błędy: ${errorCount}`, {
-        icon: "⚠️",
-      });
+      toast(`Sukces: ${successCount}, Błędy: ${errorCount}`, { icon: "⚠️" });
     }
   };
 
-  const formatFileSize = (bytes) => {
-    const mb = bytes / (1024 * 1024);
-    return mb < 1 ? `${(bytes / 1024).toFixed(0)} KB` : `${mb.toFixed(1)} MB`;
-  };
-
-  const pendingFiles = selectedFiles.filter(
-    (f) => f.status === "pending"
-  ).length;
-  const successFiles = selectedFiles.filter(
-    (f) => f.status === "success"
-  ).length;
+  // Zliczanie statusów (aktualizuje się przy każdym renderze)
+  const pendingFiles = selectedFiles.filter((f) => f.status === "pending").length;
+  const successFiles = selectedFiles.filter((f) => f.status === "success").length;
   const errorFiles = selectedFiles.filter((f) => f.status === "error").length;
 
   return (
@@ -191,7 +181,7 @@ function UploadPage() {
         <p className="text-gray-400">Prześlij klipy video lub screenshoty</p>
       </div>
 
-      {/* Drag & Drop Area */}
+      {/* Drag & Drop */}
       <div className="mb-6">
         <div
           className={`border-2 border-dashed rounded-lg p-12 text-center transition-colors ${
@@ -205,42 +195,34 @@ function UploadPage() {
           onDrop={handleDrop}
         >
           <input
+            id="file-input"
             type="file"
             multiple
-            accept=".mp4,.webm,.mov,.png,.jpg,.jpeg"
+            accept={ALLOWED_VIDEO.concat(ALLOWED_IMAGE).join(",")}
             onChange={handleFileSelect}
             disabled={uploading}
             className="hidden"
-            id="file-input"
           />
-
           <label htmlFor="file-input" className="cursor-pointer block">
             <Upload size={64} className="mx-auto mb-4 text-gray-500" />
-
             <p className="text-lg mb-2 text-gray-300">
-              {dragActive
-                ? "Upuść pliki tutaj"
-                : "Kliknij lub przeciągnij pliki"}
+              {dragActive ? "Upuść pliki tutaj" : "Kliknij lub przeciągnij pliki"}
             </p>
-
             <div className="text-sm text-gray-500 space-y-1">
-              <p>
-                Video: MP4, WebM, MOV (max {MAX_VIDEO_SIZE / (1024 * 1024)}MB)
-              </p>
+              <p>Video: MP4, WebM, MOV (max {MAX_VIDEO_SIZE / (1024 * 1024)}MB)</p>
               <p>Obrazy: PNG, JPG (max {MAX_IMAGE_SIZE / (1024 * 1024)}MB)</p>
             </div>
           </label>
         </div>
       </div>
 
-      {/* Files List */}
+      {/* Lista plików */}
       {selectedFiles.length > 0 && (
         <div className="mb-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-semibold">
               Pliki ({selectedFiles.length})
             </h2>
-
             {!uploading && (
               <button
                 onClick={() => {
@@ -255,7 +237,7 @@ function UploadPage() {
             )}
           </div>
 
-          {/* Status Summary */}
+          {/* Podsumowanie */}
           {(successFiles > 0 || errorFiles > 0) && (
             <div className="flex gap-4 mb-4 text-sm">
               {successFiles > 0 && (
@@ -291,23 +273,14 @@ function UploadPage() {
                 }`}
               >
                 <div className="flex items-center gap-4">
-                  {/* Preview */}
-                  <div className="w-20 h-20 bg-gray-900 rounded flex-shrink-0 overflow-hidden">
+                  <div className="w-20 h-20 bg-gray-900 rounded overflow-hidden flex-shrink-0">
                     {fileObj.type === "video" ? (
-                      <video
-                        src={fileObj.preview}
-                        className="w-full h-full object-cover"
-                      />
+                      <video src={fileObj.preview} className="w-full h-full object-cover" />
                     ) : (
-                      <img
-                        src={fileObj.preview}
-                        alt=""
-                        className="w-full h-full object-cover"
-                      />
+                      <img src={fileObj.preview} alt="" className="w-full h-full object-cover" />
                     )}
                   </div>
 
-                  {/* Info */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
                       {fileObj.type === "video" ? (
@@ -315,16 +288,13 @@ function UploadPage() {
                       ) : (
                         <ImageIcon size={16} className="text-green-400" />
                       )}
-                      <span className="font-medium truncate">
-                        {fileObj.file.name}
-                      </span>
+                      <span className="font-medium truncate">{fileObj.file.name}</span>
                     </div>
 
                     <p className="text-sm text-gray-400 mb-2">
                       {formatFileSize(fileObj.file.size)}
                     </p>
 
-                    {/* Status */}
                     {fileObj.status === "success" && (
                       <div className="flex items-center gap-2 text-green-400 text-sm">
                         <CheckCircle size={14} />
@@ -339,14 +309,12 @@ function UploadPage() {
                       </div>
                     )}
 
-                    {fileObj.status === "pending" && uploading && (
+                    {fileObj.status === "uploading" && (
                       <div className="space-y-2">
                         <div className="flex items-center gap-2 text-purple-400 text-sm">
                           <Loader size={14} className="animate-spin" />
                           <span>Wysyłanie... {fileObj.progress}%</span>
                         </div>
-
-                        {/* Progress bar */}
                         <div className="w-full bg-gray-700 rounded-full h-1.5 overflow-hidden">
                           <div
                             className="bg-purple-500 h-full transition-all duration-300"
@@ -363,7 +331,6 @@ function UploadPage() {
                     )}
                   </div>
 
-                  {/* Remove button */}
                   {!uploading && (
                     <button
                       onClick={() => removeFile(index)}
@@ -403,7 +370,6 @@ function UploadPage() {
         </button>
       )}
 
-      {/* Uproszczony info box */}
       <div className="mt-8 bg-gray-800 rounded-lg p-4 border border-purple-700/30">
         <h3 className="font-semibold mb-2 text-sm text-purple-400">
           Informacje
