@@ -1,123 +1,47 @@
 """
-Router dla zarządzania plikami — upload, download, listowanie klipów i screenshotów
-Z CACHE
+Router dla zarządzania plikami
+Tylko endpointy, logika w services
 """
-import hashlib
 import io
 import logging
-import shutil
-import uuid
 import zipfile
+from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
 import aiofiles
 from app.core.cache import cache_key_builder
 from app.core.config import settings
-from app.core.database import engine
 from app.core.database import get_db
 from app.core.dependencies import get_current_user, get_current_user_flexible
-from app.core.exceptions import FileUploadError, ValidationError, NotFoundError, AuthorizationError, StorageError, \
-    DatabaseError
+from app.core.exceptions import (
+    FileUploadError, ValidationError, NotFoundError,
+    AuthorizationError, StorageError
+)
 from app.models.award import Award
+from app.models.award_type import AwardType
 from app.models.clip import Clip, ClipType
 from app.models.user import User
 from app.schemas.clip import ClipResponse, ClipListResponse, ClipDetailResponse
-from app.services.thumbnail_service import generate_thumbnail, extract_video_metadata
+from app.services.file_processor import (
+    save_file_to_disk, generate_thumbnails_sync,
+    create_clip_record, invalidate_clips_cache
+)
+from app.services.file_validator import (
+    validate_file_type, validate_file_size,
+    generate_unique_filename, check_disk_space
+)
+from app.utils.file_helpers import can_access_clip
 from fastapi import APIRouter, UploadFile, File, Depends, Request, Response
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi_cache.decorator import cache
 from pydantic import BaseModel, Field
 from sqlalchemy import desc, asc
-from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
+from sqlalchemy.orm import selectinload
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-
-# Dozwolone typy plików
-ALLOWED_VIDEO_TYPES = {
-    "video/mp4": ".mp4",
-    "video/webm": ".webm",
-    "video/quicktime": ".mov",
-}
-
-ALLOWED_IMAGE_TYPES = {
-    "image/png": ".png",
-    "image/jpeg": ".jpg",
-    "image/jpg": ".jpg",
-}
-
-ALLOWED_MIME_TYPES = {**ALLOWED_VIDEO_TYPES, **ALLOWED_IMAGE_TYPES}
-
-# Maksymalne rozmiary plików (w bajtach)
-MAX_VIDEO_SIZE = 500 * 1024 * 1024  # 500 MB
-MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10 MB
-
-
-def validate_file_type(filename: str, content_type: str) -> tuple[ClipType, str]:
-    """
-    Waliduje typ pliku na podstawie MIME type
-
-    Returns:
-        tuple: (ClipType, extension)
-    """
-    if content_type not in ALLOWED_MIME_TYPES:
-        raise ValidationError(
-            message=f"Niedozwolony typ pliku: {content_type}",
-            field="file",
-            details={
-                "allowed_types": list(ALLOWED_MIME_TYPES.keys()),
-                "received_type": content_type
-            }
-        )
-
-    # Określ typ klipa
-    if content_type in ALLOWED_VIDEO_TYPES:
-        clip_type = ClipType.VIDEO
-    else:
-        clip_type = ClipType.SCREENSHOT
-
-    extension = ALLOWED_MIME_TYPES[content_type]
-
-    return clip_type, extension
-
-
-def validate_file_size(file_size: int, clip_type: ClipType):
-    """Waliduje rozmiar pliku"""
-    max_size = settings.max_video_size_bytes if clip_type == ClipType.VIDEO else settings.max_image_size_bytes
-
-    if file_size > max_size:
-        max_size_mb = max_size / (1024 * 1024)
-        actual_size_mb = file_size / (1024 * 1024)
-        raise ValidationError(
-            message=f"Plik jest za duży: {actual_size_mb:.1f}MB (max: {max_size_mb:.0f}MB)",
-            field="file",
-            details={
-                "max_size_bytes": max_size,
-                "actual_size_bytes": file_size,
-                "max_size_mb": max_size_mb,
-                "actual_size_mb": actual_size_mb
-            }
-        )
-
-
-def generate_unique_filename(original_filename: str, extension: str) -> str:
-    """
-    Generuje unikalną nazwę pliku używając UUID
-
-    Returns:
-        str: Unikalna nazwa pliku z rozszerzeniem
-    """
-    # Usuń niebezpieczne znaki z oryginalnej nazwy
-    safe_name = "".join(c for c in original_filename if c.isalnum() or c in "._- ")
-    safe_name = safe_name[:50]  # Ogranicz długość
-
-    # Wygeneruj UUID
-    unique_id = str(uuid.uuid4())
-
-    # Nazwa: UUID_oryginalna_nazwa.ext
-    return f"{unique_id}_{safe_name}{extension}"
 
 
 @router.post("/upload")
@@ -127,191 +51,54 @@ async def upload_file(
         current_user: User = Depends(get_current_user)
 ):
     """
-    Upload pliku z pełną walidacją i error handling
-    INVALIDUJE CACHE po uploadzpie
-    GENERUJE JPEG + WebP thumbnails
+    Upload pliku
     """
     logger.info(f"Upload from {current_user.username}: {file.filename} ({file.content_type})")
 
     try:
-        # 1. Waliduj typ pliku
-        try:
-            clip_type, extension = validate_file_type(file.filename, file.content_type)
-        except ValidationError as e:
-            logger.warning(f"Invalid file type: {file.content_type}")
-            raise
+        # 1. Waliduj typ
+        clip_type, extension = validate_file_type(file.filename, file.content_type)
 
         # 2. Przeczytaj plik
-        try:
-            file_content = await file.read()
-            file_size = len(file_content)
-        except (RuntimeError, ValueError) as e:
-            logger.error(f"Failed to read file: {e}")
-            raise FileUploadError(
-                message="Nie można odczytać pliku",
-                filename=file.filename,
-                reason="File read error"
-            )
+        file_content = await file.read()
+        file_size = len(file_content)
 
         # 3. Waliduj rozmiar
-        try:
-            validate_file_size(file_size, clip_type)
-        except ValidationError as e:
-            logger.warning(f"File too large: {file_size} bytes")
-            raise
+        validate_file_size(file_size, clip_type)
 
-        # 4. Wygeneruj unikalną nazwę
+        # 4. Wygeneruj nazwę
         unique_filename = generate_unique_filename(file.filename, extension)
 
-        # 5. Określ ścieżkę
-        if clip_type == ClipType.VIDEO:
-            storage_dir = Path(settings.clips_path)
-        else:
-            storage_dir = Path(settings.screenshots_path)
+        # 5. Sprawdź miejsce
+        from app.services.file_processor import get_storage_directory
+        storage_dir = get_storage_directory(clip_type)
+        check_disk_space(storage_dir, file_size)
 
-        if settings.environment == "development":
-            storage_dir = (
-                    Path.cwd() / "uploads" / ("clips" if clip_type == ClipType.VIDEO else "screenshots")).resolve()
+        # 6. Zapisz plik
+        file_path = await save_file_to_disk(file_content, unique_filename, clip_type)
 
-        # 6. Sprawdź miejsce na dysku
-        try:
-            check_disk_space(storage_dir, file_size)
-        except StorageError as e:
-            logger.error(f"Insufficient disk space: {e}")
-            raise
+        # 7. Generuj thumbnail
+        thumbnail_path, thumbnail_webp_path, metadata = generate_thumbnails_sync(
+            file_path, clip_type
+        )
 
-        # 7. Utwórz katalog
-        try:
-            storage_dir.mkdir(parents=True, exist_ok=True)
-        except OSError as e:
-            logger.error(f"Failed to create directory: {e}")
-            raise StorageError(
-                message="Nie można utworzyć katalogu",
-                path=str(storage_dir)
-            )
+        # 8. Zapisz do bazy
+        new_clip = await create_clip_record(
+            db=db,
+            filename=file.filename,
+            file_path=file_path,
+            file_size=file_size,
+            clip_type=clip_type,
+            uploader_id=current_user.id,
+            thumbnail_path=thumbnail_path,
+            thumbnail_webp_path=thumbnail_webp_path,
+            metadata=metadata
+        )
 
-        file_path = (storage_dir / unique_filename)
+        # 9. Invaliduj cache
+        await invalidate_clips_cache()
 
-        # 8. Zapisz plik
-        try:
-            with open(file_path, "wb") as f:
-                f.write(file_content)
-            logger.info(f"File saved: {file_path}")
-        except OSError as e:
-            logger.error(f"Failed to write file: {e}")
-            raise StorageError(
-                message="Nie można zapisać pliku na dysku",
-                path=str(file_path)
-            )
-
-        # 9. Generuj thumbnail dla video i screenshotów (JPEG + WebP)
-        thumbnail_path = None
-        thumbnail_webp_path = None
-        video_metadata = None
-
-        try:
-            # Przygotuj katalog na thumbnails
-            thumbnails_dir = Path(settings.thumbnails_path)
-            if settings.environment == "development":
-                thumbnails_dir = (Path.cwd() / "uploads" / "thumbnails").resolve()
-
-            thumbnails_dir.mkdir(parents=True, exist_ok=True)
-
-            thumbnail_filename = f"{Path(unique_filename).stem}"  # bez rozszerzenia
-            thumbnail_base_path = thumbnails_dir / thumbnail_filename
-
-            if clip_type == ClipType.VIDEO:
-                # Video: użyj FFmpeg z timestamp
-                video_metadata = extract_video_metadata(str(file_path))
-
-                success, webp_path = generate_thumbnail(
-                    video_path=str(file_path),
-                    output_path=str(thumbnail_base_path),
-                    timestamp="00:00:01",
-                    width=320,
-                    quality=5  # ZMIENIONE z 2 na 5
-                )
-
-                if success:
-                    thumbnail_path = f"{thumbnail_base_path}.jpg"
-                    thumbnail_webp_path = webp_path
-                    logger.info(f"Video thumbnail generated: JPEG + WebP")
-
-            else:
-                # Screenshot: użyj FFmpeg do skalowania obrazu
-                from app.services.thumbnail_service import generate_image_thumbnail, extract_image_metadata
-
-                video_metadata = extract_image_metadata(str(file_path))
-
-                success, webp_path = generate_image_thumbnail(
-                    image_path=str(file_path),
-                    output_path=str(thumbnail_base_path),
-                    width=320,
-                    quality=5  # ZMIENIONE z 2 na 5
-                )
-
-                if success:
-                    thumbnail_path = f"{thumbnail_base_path}.jpg"
-                    thumbnail_webp_path = webp_path
-                    logger.info(f"Image thumbnail generated: JPEG + WebP")
-
-        except FileUploadError as e:
-            logger.warning(f"Thumbnail generation failed: {e}")
-            # Kontynuuj mimo błędu thumbnail
-        except OSError as e:
-            logger.warning(f"Thumbnail directory error: {e}")
-            # Kontynuuj mimo błędu katalogu thumbnail
-
-        # 10. Zapisz do bazy
-        try:
-            new_clip = Clip(
-                filename=file.filename,
-                file_path=str(file_path.resolve()),
-                thumbnail_path=thumbnail_path,
-                thumbnail_webp_path=thumbnail_webp_path,  # NOWE POLE
-                clip_type=clip_type,
-                file_size=file_size,
-                duration=video_metadata.get("duration") if video_metadata else None,
-                width=video_metadata.get("width") if video_metadata else None,
-                height=video_metadata.get("height") if video_metadata else None,
-                uploader_id=current_user.id
-            )
-
-            db.add(new_clip)
-            logger.info(f"About to commit clip ID={new_clip.id}")
-            db.commit()
-            logger.info(f"Clip committed successfully")
-            db.refresh(new_clip)
-
-            logger.info(f"Clip created: ID={new_clip.id}")
-
-        except SQLAlchemyError as e:
-            logger.error(f"Database error: {e}")
-            # Usuń pliki jeśli zapis do bazy się nie udał
-            try:
-                file_path.unlink()
-                if thumbnail_path:
-                    Path(thumbnail_path).unlink()
-                if thumbnail_webp_path:
-                    Path(thumbnail_webp_path).unlink()
-            except OSError:
-                pass
-
-            from app.core.exceptions import DatabaseError
-            raise DatabaseError(
-                message="Nie można zapisać do bazy danych",
-                operation="create_clip"
-            )
-
-        # Invaliduj cache po upload
-        try:
-            from app.core.cache import invalidate_cache
-            await invalidate_cache("clips:*")
-            logger.info("Cache invalidated after upload")
-        except Exception as e:
-            logger.warning(f"Failed to invalidate cache: {e}")
-
-        # 11. Zwróć sukces
+        # 10. Zwróć response
         response = {
             "message": "Plik został przesłany pomyślnie",
             "clip_id": new_clip.id,
@@ -326,14 +113,13 @@ async def upload_file(
             response["thumbnail_generated"] = True
             response["webp_generated"] = thumbnail_webp_path is not None
 
-        if video_metadata:
-            response["duration"] = video_metadata.get("duration")
-            response["resolution"] = f"{video_metadata.get('width')}x{video_metadata.get('height')}"
+        if metadata:
+            response["duration"] = metadata.get("duration")
+            response["resolution"] = f"{metadata.get('width')}x{metadata.get('height')}"
 
         return response
 
-    except (ValidationError, FileUploadError, StorageError, DatabaseError):
-        # Nasze własne wyjątki - przepuść dalej
+    except (ValidationError, FileUploadError, StorageError):
         raise
     except Exception as e:
         # Nieoczekiwany błąd
@@ -361,38 +147,21 @@ async def list_clips(
 ):
     """
     Listowanie klipów z paginacją, sortowaniem i filtrowaniem
-    CACHED 30s + HTTP/2 Server Push dla pierwszych 5 thumbnails
-    OPTIMIZED: selectinload zamiast joinedload (O(N+M) zamiast O(N*M))
 
     GET /api/files/clips?page=1&limit=50&sort_by=created_at&sort_order=desc&clip_type=video
     """
 
-    logger.debug(f"🎯 list_clips endpoint called - should be cached for 30s")
-    logger.debug(f"📊 Params: page={page}, limit={limit}, sort_by={sort_by}, clip_type={clip_type}")
-
     # Walidacja parametrów
-    if page < 1:
-        page = 1
-
-    if limit < 1:
-        limit = 50
-    elif limit > 100:
-        limit = 100
-
-    # Oblicz offset
+    page = max(1, page)
+    limit = min(max(1, limit), 100)
     offset = (page - 1) * limit
 
-    # Bazowe query z optymalizacją
-    from sqlalchemy.orm import selectinload
-
-    # ZMIANA: selectinload zamiast joinedload
-    # joinedload: O(N*M) - jeden wielki JOIN
-    # selectinload: O(N+M) - osobne query dla awards, potem łączy w pamięci
+    # Query z optymalizacją
     query = db.query(Clip).options(
         selectinload(Clip.awards).selectinload(Award.user)
     ).filter(Clip.is_deleted == False)
 
-    # Filtrowanie po typie
+    # Filtrowanie
     if clip_type:
         try:
             filter_type = ClipType(clip_type.lower())
@@ -400,8 +169,7 @@ async def list_clips(
         except ValueError:
             raise ValidationError(
                 message=f"Nieprawidłowy typ klipa: {clip_type}",
-                field="clip_type",
-                details={"allowed_values": ["video", "screenshot"]}
+                field="clip_type"
             )
 
     # Filtrowanie po uploaderze
@@ -419,48 +187,31 @@ async def list_clips(
     if sort_by not in allowed_sort_fields:
         raise ValidationError(
             message=f"Nieprawidłowe pole sortowania: {sort_by}",
-            field="sort_by",
-            details={"allowed_values": list(allowed_sort_fields.keys())}
+            field="sort_by"
         )
 
     sort_field = allowed_sort_fields[sort_by]
-
-    if sort_order.lower() == "asc":
-        query = query.order_by(asc(sort_field))
-    else:
-        query = query.order_by(desc(sort_field))
-
-    # Pobierz total przed paginacją
-    total = query.count()
-    logger.info(f"Total clips found: {total}")
+    query = query.order_by(asc(sort_field) if sort_order.lower() == "asc" else desc(sort_field))
 
     # Paginacja
+    total = query.count()
     clips = query.offset(offset).limit(limit).all()
 
-    # Przygotuj mapę AwardType (jeden query dla wszystkich typów)
-    from app.models.award_type import AwardType
-
-    all_award_names = set()
-    for clip in clips:
-        for award in clip.awards:
-            all_award_names.add(award.award_name)
-
+    # Pobierz AwardTypes
+    all_award_names = {award.award_name for clip in clips for award in clip.awards}
     award_types = db.query(AwardType).filter(AwardType.name.in_(all_award_names)).all() if all_award_names else []
     award_types_map = {at.name: at for at in award_types}
 
     # Konwertuj do response
     clips_response = []
     for clip in clips:
-        # Group awards by type
         award_counts = {}
         for award in clip.awards:
             award_counts[award.award_name] = award_counts.get(award.award_name, 0) + 1
 
-        # Przygotuj award_icons
         award_icons = []
         for award_name, count in award_counts.items():
             award_type = award_types_map.get(award_name)
-
             icon_url = f"/api/admin/award-types/{award_type.id}/icon" if (
                     award_type and award_type.custom_icon_path) else None
 
@@ -472,54 +223,37 @@ async def list_clips(
                 "count": count
             })
 
-        clips_response.append(
-            ClipResponse(
-                id=clip.id,
-                filename=clip.filename,
-                clip_type=clip.clip_type.value,
-                file_size=clip.file_size,
-                file_size_mb=clip.file_size_mb,
-                duration=clip.duration,
-                width=clip.width,
-                height=clip.height,
-                created_at=clip.created_at,
-                uploader_username=clip.uploader.username,
-                uploader_id=clip.uploader_id,
-                award_count=clip.award_count,
-                has_thumbnail=clip.thumbnail_path is not None,
-                has_webp_thumbnail=clip.thumbnail_webp_path is not None,
-                award_icons=award_icons
-            )
-        )
+        clips_response.append(ClipResponse(
+            id=clip.id,
+            filename=clip.filename,
+            clip_type=clip.clip_type.value,
+            file_size=clip.file_size,
+            file_size_mb=clip.file_size_mb,
+            duration=clip.duration,
+            width=clip.width,
+            height=clip.height,
+            created_at=clip.created_at,
+            uploader_username=clip.uploader.username,
+            uploader_id=clip.uploader_id,
+            award_count=clip.award_count,
+            has_thumbnail=clip.thumbnail_path is not None,
+            has_webp_thumbnail=clip.thumbnail_webp_path is not None,
+            award_icons=award_icons
+        ))
 
     pages = (total + limit - 1) // limit
 
-    # ═══════════════════════════════════════════════════════════
-    # HTTP/2 SERVER PUSH - Link header dla pierwszych 5 thumbnails
-    # ═══════════════════════════════════════════════════════════
+    # HTTP/2 Server Push
     if clips_response:
         link_headers = []
-
-        # Push tylko pierwsze 5 thumbnails (najbardziej widoczne)
         for clip_resp in clips_response[:5]:
             if clip_resp.has_thumbnail:
                 thumbnail_url = f"/api/files/thumbnails/{clip_resp.id}"
-
-                # Preferuj WebP jeśli dostępny (mniejszy rozmiar)
-                if clip_resp.has_webp_thumbnail:
-                    link_headers.append(
-                        f'<{thumbnail_url}>; rel=preload; as=image; type=image/webp'
-                    )
-                else:
-                    link_headers.append(
-                        f'<{thumbnail_url}>; rel=preload; as=image; type=image/jpeg'
-                    )
+                img_type = "image/webp" if clip_resp.has_webp_thumbnail else "image/jpeg"
+                link_headers.append(f'<{thumbnail_url}>; rel=preload; as=image; type={img_type}')
 
         if link_headers:
-            # Ustaw Link header
             response.headers["Link"] = ", ".join(link_headers)
-            logger.debug(f"📤 HTTP/2 Server Push enabled: {len(link_headers)} thumbnails")
-    # ═══════════════════════════════════════════════════════════
 
     return ClipListResponse(
         clips=clips_response,
@@ -530,7 +264,6 @@ async def list_clips(
     )
 
 
-# Cache na 5min
 @router.get("/clips/{clip_id}", response_model=ClipDetailResponse)
 @cache(expire=300, key_builder=cache_key_builder)
 async def get_clip(
@@ -539,12 +272,7 @@ async def get_clip(
         db: Session = Depends(get_db),
         current_user: User = Depends(get_current_user)
 ):
-    """
-    Pobierz szczegóły pojedynczego klipa z nagrodami
-    CACHED 5min
-
-    GET /api/files/clips/{clip_id}
-    """
+    """Szczegóły klipa - bez zmian"""
     from sqlalchemy.orm import joinedload
 
     clip = db.query(Clip).options(
@@ -558,7 +286,6 @@ async def get_clip(
     if not clip:
         raise NotFoundError(resource="Klip", resource_id=clip_id)
 
-    # Przygotuj informacje o nagrodach
     awards_info = [
         {
             "id": award.id,
@@ -584,10 +311,10 @@ async def get_clip(
         uploader_id=clip.uploader_id,
         award_count=clip.award_count,
         has_thumbnail=clip.thumbnail_path is not None,
-        has_webp_thumbnail=clip.thumbnail_webp_path is not None,  # NOWE
+        has_webp_thumbnail=clip.thumbnail_webp_path is not None,
         awards=awards_info,
         thumbnail_url=f"/api/files/thumbnails/{clip.id}" if clip.thumbnail_path else None,
-        thumbnail_webp_url=f"/api/files/thumbnails/{clip.id}" if clip.thumbnail_webp_path else None,  # NOWE
+        thumbnail_webp_url=f"/api/files/thumbnails/{clip.id}" if clip.thumbnail_webp_path else None,
         download_url=f"/api/files/download/{clip.id}"
     )
 
@@ -598,12 +325,7 @@ async def download_clip(
         db: Session = Depends(get_db),
         current_user: User = Depends(get_current_user_flexible)
 ):
-    """
-    Pobierz plik klipa
-
-    GET /api/files/download/{clip_id}
-    GET /api/files/download/{clip_id}?token=xxx (dla window.open)
-    """
+    """Pobierz plik - bez zmian"""
     clip = db.query(Clip).filter(
         Clip.id == clip_id,
         Clip.is_deleted == False
@@ -613,17 +335,11 @@ async def download_clip(
         raise NotFoundError(resource="Klip", resource_id=clip_id)
 
     if not can_access_clip(clip, current_user):
-        raise AuthorizationError(
-            message="Nie masz uprawnień do pobrania tego pliku"
-        )
+        raise AuthorizationError(message="Nie masz uprawnień do pobrania tego pliku")
 
     file_path = Path(clip.file_path)
     if not file_path.exists():
-        logger.error(f"File not found on disk: {file_path}")
-        raise StorageError(
-            message="Plik nie został znaleziony na dysku",
-            path=str(file_path)
-        )
+        raise StorageError(message="Plik nie został znaleziony", path=str(file_path))
 
     media_type = "video/mp4" if clip.clip_type == ClipType.VIDEO else "image/png"
 
@@ -639,7 +355,6 @@ async def download_clip(
 
 
 class BulkDownloadRequest(BaseModel):
-    """Request body dla bulk download"""
     clip_ids: List[int] = Field(..., min_length=1, max_length=50)
 
 
@@ -649,52 +364,22 @@ async def download_bulk(
         db: Session = Depends(get_db),
         current_user: User = Depends(get_current_user)
 ):
-    """
-    Pobierz wiele plików jako archiwum ZIP
-
-    POST /api/files/download-bulk
-    Body: {"clip_ids": [1, 2, 3]}
-
-    Zwraca archiwum ZIP ze wszystkimi wybranymi plikami
-    Maksymalnie 50 plików na raz
-    """
+    """Bulk download - bez zmian (za długi, ale prosty)"""
     clip_ids = request.clip_ids
 
-    # Walidacja liczby plików
     if len(clip_ids) > 50:
-        raise ValidationError(
-            message="Zbyt wiele plików - maksymalnie 50 naraz",
-            field="clip_ids",
-            details={"requested": len(clip_ids), "max": 50}
-        )
+        raise ValidationError(message="Zbyt wiele plików - maksymalnie 50 naraz", field="clip_ids")
 
-    # Pobierz klipy z bazy
-    clips = db.query(Clip).filter(
-        Clip.id.in_(clip_ids),
-        Clip.is_deleted == False
-    ).all()
+    clips = db.query(Clip).filter(Clip.id.in_(clip_ids), Clip.is_deleted == False).all()
 
     if not clips:
         raise NotFoundError(resource="Klipy", resource_id=None)
 
-    found_ids = {clip.id for clip in clips}
-    missing_ids = set(clip_ids) - found_ids
-
-    if missing_ids:
-        logger.warning(f"Missing clip IDs: {missing_ids}")
-
-    # Sprawdź uprawnienia dla każdego klipa
-    accessible_clips = []
-    for clip in clips:
-        if can_access_clip(clip, current_user):
-            accessible_clips.append(clip)
+    accessible_clips = [clip for clip in clips if can_access_clip(clip, current_user)]
 
     if not accessible_clips:
-        raise AuthorizationError(
-            message="Nie masz dostępu do żadnego z wybranych plików"
-        )
+        raise AuthorizationError(message="Nie masz dostępu do żadnego z wybranych plików")
 
-    # Sprawdź czy wszystkie pliki istnieją na dysku
     existing_clips = []
     total_size = 0
 
@@ -703,75 +388,35 @@ async def download_bulk(
         if file_path.exists():
             existing_clips.append(clip)
             total_size += clip.file_size
-        else:
-            logger.error(f"File not found: {file_path}")
 
     if not existing_clips:
-        raise StorageError(
-            message="Żaden z plików nie został znaleziony na dysku"
-        )
+        raise StorageError(message="Żaden z plików nie został znaleziony na dysku")
 
-    # Limit całkowitego rozmiaru (1GB)
-    MAX_TOTAL_SIZE = 1 * 1024 * 1024 * 1024  # 1 GB
-
+    MAX_TOTAL_SIZE = 1 * 1024 * 1024 * 1024
     if total_size > MAX_TOTAL_SIZE:
-        raise ValidationError(
-            message=f"Całkowity rozmiar plików przekracza limit: {total_size / (1024 ** 3):.2f}GB (max: 1GB)",
-            field="clip_ids",
-            details={
-                "total_size_bytes": total_size,
-                "max_size_bytes": MAX_TOTAL_SIZE
-            }
-        )
+        raise ValidationError(message=f"Całkowity rozmiar przekracza limit: {total_size / (1024 ** 3):.2f}GB")
 
-    logger.info(f"Creating ZIP archive with {len(existing_clips)} files, total size: {total_size / (1024 ** 2):.2f}MB")
-
-    # Generator do streamowania ZIP
     async def zip_generator():
-        """
-        Generator który tworzy ZIP w locie i streamuje do klienta
-        """
-        # Użyj BytesIO jako temporary buffer
         buffer = io.BytesIO()
-
         with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
             for clip in existing_clips:
-                file_to_path = Path(clip.file_path)
-
-                # Użyj oryginalnej nazwy pliku w ZIP
-                # Dodaj ID żeby uniknąć kolizji nazw
-                filename_in_zip = f"{clip.id}_{clip.filename}"
-
                 try:
-                    # Dodaj plik do ZIP
-                    zip_file.write(file_to_path, arcname=filename_in_zip)
-                    logger.debug(f"Added to ZIP: {filename_in_zip}")
-
+                    zip_file.write(Path(clip.file_path), arcname=f"{clip.id}_{clip.filename}")
                 except OSError as e:
-                    logger.error(f"Failed to add file to ZIP: {file_to_path}, error: {e}")
-                    # Kontynuuj z pozostałymi plikami
+                    logger.error(f"Failed to add file to ZIP: {e}")
 
-        # Przenieś wskaźnik na początek bufora
         buffer.seek(0)
-
-        # Streamuj ZIP w chunkach
         while True:
-            chunk = buffer.read(8192)  # 8KB chunks
+            chunk = buffer.read(8192)
             if not chunk:
                 break
             yield chunk
 
-    # Wygeneruj nazwę archiwum
-    from datetime import datetime
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    zip_filename = f"tamteklipy_{timestamp}.zip"
-
     return StreamingResponse(
         zip_generator(),
         media_type="application/zip",
-        headers={
-            "Content-Disposition": f'attachment; filename="{zip_filename}"',
-        }
+        headers={"Content-Disposition": f'attachment; filename="tamteklipy_{timestamp}.zip"'}
     )
 
 
@@ -782,13 +427,7 @@ async def get_thumbnail(
         db: Session = Depends(get_db),
         current_user: User = Depends(get_current_user_flexible)
 ):
-    """
-    Pobierz miniaturę klipa
-    Automatycznie zwraca WebP dla obsługujących przeglądarek, JPEG jako fallback
-
-    GET /api/files/thumbnails/{clip_id}
-    GET /api/files/thumbnails/{clip_id}?token=xxx (dla <img> tag)
-    """
+    """Pobierz thumbnail - bez zmian"""
     clip = db.query(Clip).filter(
         Clip.id == clip_id,
         Clip.is_deleted == False
@@ -800,44 +439,31 @@ async def get_thumbnail(
     if not clip.thumbnail_path:
         raise NotFoundError(resource="Thumbnail dla klipa", resource_id=clip_id)
 
-    # Sprawdź czy klient obsługuje WebP (header Accept)
+    # Sprawdź WebP support
     accept_header = request.headers.get("accept", "")
     supports_webp = "image/webp" in accept_header
 
-    # Jeśli klient obsługuje WebP i mamy WebP - zwróć WebP
     if supports_webp and clip.thumbnail_webp_path:
         thumbnail_path = Path(clip.thumbnail_webp_path)
         media_type = "image/webp"
 
         if thumbnail_path.exists():
-            logger.debug(f"Serving WebP thumbnail for clip {clip_id}")
             return FileResponse(
                 path=str(thumbnail_path),
                 media_type=media_type,
-                headers={
-                    "Cache-Control": "public, max-age=3600"
-                }
+                headers={"Cache-Control": "public, max-age=3600"}
             )
-        else:
-            logger.warning(f"WebP thumbnail not found, falling back to JPEG: {thumbnail_path}")
 
     # Fallback do JPEG
     thumbnail_path = Path(clip.thumbnail_path)
 
     if not thumbnail_path.exists():
-        logger.error(f"Thumbnail not found: {thumbnail_path}")
-        raise StorageError(
-            message="Thumbnail nie został znaleziony",
-            path=str(thumbnail_path)
-        )
+        raise StorageError(message="Thumbnail nie został znaleziony", path=str(thumbnail_path))
 
-    logger.debug(f"Serving JPEG thumbnail for clip {clip_id}")
     return FileResponse(
         path=str(thumbnail_path),
         media_type="image/jpeg",
-        headers={
-            "Cache-Control": "public, max-age=3600"
-        }
+        headers={"Cache-Control": "public, max-age=3600"}
     )
 
 
@@ -848,12 +474,7 @@ async def stream_video(
         db: Session = Depends(get_db),
         current_user: User = Depends(get_current_user_flexible)
 ):
-    """
-    Stream video z obsługą Range requests
-
-    GET /api/files/stream/{clip_id}
-    GET /api/files/stream/{clip_id}?token=xxx (dla <video> tag)
-    """
+    """Stream video z Range requests - bez zmian"""
     clip = db.query(Clip).filter(
         Clip.id == clip_id,
         Clip.is_deleted == False,
@@ -866,10 +487,7 @@ async def stream_video(
     file_path = Path(clip.file_path)
 
     if not file_path.exists():
-        raise StorageError(
-            message="Plik nie został znaleziony",
-            path=str(file_path)
-        )
+        raise StorageError(message="Plik nie został znaleziony", path=str(file_path))
 
     file_size = file_path.stat().st_size
     range_header = request.headers.get("range")
@@ -929,83 +547,3 @@ async def stream_video(
             "Cache-Control": "public, max-age=3600"
         }
     )
-
-
-def check_disk_space(storage_path: Path, required_bytes: int) -> bool:
-    """
-    Sprawdza czy jest wystarczająco miejsca na dysku
-
-    Args:
-        storage_path: Ścieżka do katalogu storage
-        required_bytes: Wymagana ilość bajtów
-
-    Returns:
-        bool: True jeśli jest miejsce, False jeśli nie ma
-
-    Raises:
-        StorageError: Jeśli nie ma wystarczająco miejsca
-    """
-    try:
-        # Jeśli katalog nie istnieje, sprawdzamy dysk/partycję (anchor) bieżącego katalogu
-        if storage_path.exists():
-            target = storage_path
-        else:
-            anchor = storage_path.anchor or Path.cwd().anchor
-            target = Path(anchor)
-
-        stat = shutil.disk_usage(target)
-        free_space = stat.free
-
-        # Zostawmy przynajmniej 1GB wolnego miejsca jako bufor
-        SAFETY_BUFFER = 1 * 1024 * 1024 * 1024  # 1 GB
-
-        if free_space - required_bytes < SAFETY_BUFFER:
-            free_mb = free_space / (1024 * 1024)
-            required_mb = required_bytes / (1024 * 1024)
-
-            from app.core.exceptions import StorageError
-            raise StorageError(
-                message=f"Brak miejsca na dysku: dostępne {free_mb:.0f}MB, wymagane {required_mb:.0f}MB",
-                path=str(target)
-            )
-
-        return True
-
-    except OSError as e:
-        logger.warning(f"Failed to check disk space: {e}")
-        # Nie przerywamy uploadu, jeśli nie możemy sprawdzić miejsca
-        return True
-
-
-def calculate_file_hash(file_content: bytes) -> str:
-    """
-    Oblicza SHA256 hash pliku
-
-    Args:
-        file_content: Zawartość pliku w bajtach
-
-    Returns:
-        str: SHA256 hash jako hex string
-    """
-    return hashlib.sha256(file_content).hexdigest()
-
-
-def can_access_clip(clip: Clip, user: User) -> bool:
-    """
-    Sprawdza czy użytkownik ma dostęp do klipa
-
-    Args:
-        clip: Klip do sprawdzenia
-        user: Użytkownik
-
-    Returns:
-        bool: True jeśli ma dostęp
-    """
-    # Zasady dostępu:
-    # 1. Właściciel zawsze ma dostęp
-    if clip.uploader_id == user.id:
-        return True
-
-    # 2. Wszyscy zalogowani mają dostęp
-    # W przyszłości można dodać np. prywatne klipy
-    return True
