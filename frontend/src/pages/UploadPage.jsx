@@ -58,7 +58,7 @@ function UploadPage() {
 
       validFiles.push({
         file,
-        preview: URL.createObjectURL(file),
+        preview: URL.createObjectURL(/** @type {Blob} */ (file)),
         type: isVideo ? "video" : "image",
         status: "pending",
         progress: 0,
