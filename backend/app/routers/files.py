@@ -57,7 +57,7 @@ async def upload_file(
 
     try:
         # 1. Waliduj typ
-        clip_type, extension = validate_file_type(file.filename, file.content_type)
+        clip_type, extension = validate_file_type(file.content_type)
 
         # 2. Przeczytaj plik
         file_content = await file.read()
