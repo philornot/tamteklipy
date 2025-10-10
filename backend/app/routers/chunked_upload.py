@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # Katalog na tymczasowe chunki
-CHUNKS_DIR = Path(settings.storage_path) / "chunks"
+CHUNKS_DIR = Path("/home/filip/tamteklipy_storage/chunks")
 CHUNKS_DIR.mkdir(parents=True, exist_ok=True)
 
 
