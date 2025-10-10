@@ -395,6 +395,7 @@ else:
 
 # ═══════════════════════════════════════════════════════════
 # DEV SERVER - uruchomienie bezpośrednio (python main.py)
+# Lepiej użyj uvicorn: python -m uvicorn app.main:app --reload
 # ═══════════════════════════════════════════════════════════
 if __name__ == "__main__":
     import uvicorn
