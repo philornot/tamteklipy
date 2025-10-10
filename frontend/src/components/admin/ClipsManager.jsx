@@ -8,10 +8,114 @@ import {
   Calendar,
   User,
   HardDrive,
-  Award
+  Award,
+  CheckSquare,
+  X,
+  RefreshCw
 } from "lucide-react";
 import api from "../../services/api.js";
 import toast from "react-hot-toast";
+import { useBulkSelection } from "../../hooks/useBulkSelection.js";
+
+function AdminFloatingToolbar({ selectedCount, selectedIds, onActionComplete, onCancel }) {
+  const [loading, setLoading] = useState(false);
+
+  const handleBulkDelete = async () => {
+    if (!confirm(`Czy na pewno chcesz usunąć ${selectedCount} ${selectedCount === 1 ? 'klip' : 'klipy'}?`)) {
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const response = await api.post('/files/clips/bulk-action', {
+        clip_ids: selectedIds,
+        action: 'delete',
+      });
+
+      if (response.data.success) {
+        toast.success(response.data.message);
+        onActionComplete('delete', response.data);
+      } else {
+        toast.error(response.data.message);
+      }
+    } catch (err) {
+      console.error('Bulk delete failed:', err);
+      toast.error(err.response?.data?.message || 'Nie udało się usunąć klipów');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleBulkRestore = async () => {
+    // TODO: Implementacja bulk restore po dodaniu endpointu
+    toast.error('Funkcja przywracania będzie dostępna wkrótce');
+  };
+
+  return (
+    <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-40 animate-slideUp">
+      <div className="bg-gray-900 border border-red-500/50 rounded-2xl shadow-2xl shadow-red-500/20 backdrop-blur-xl">
+        <div className="px-6 py-4 flex items-center gap-4">
+          {/* Selection info */}
+          <div className="flex items-center gap-3 pr-4 border-r border-gray-700">
+            <div className="w-8 h-8 rounded-full bg-red-500/20 flex items-center justify-center">
+              <span className="text-red-400 font-bold text-sm">
+                {selectedCount}
+              </span>
+            </div>
+            <span className="text-sm text-gray-300">
+              {selectedCount === 1 ? 'klip zaznaczony' : 'klipy zaznaczone'}
+            </span>
+          </div>
+
+          {/* Actions */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleBulkRestore}
+              disabled={loading}
+              className="px-4 py-2 bg-green-600/90 hover:bg-green-600 text-white rounded-lg transition flex items-center gap-2 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Przywróć zaznaczone"
+            >
+              <RefreshCw size={16} />
+              <span className="hidden sm:inline">Przywróć</span>
+            </button>
+
+            <div className="w-px h-6 bg-gray-700 mx-1" />
+
+            <button
+              onClick={handleBulkDelete}
+              disabled={loading}
+              className="px-4 py-2 bg-red-600/90 hover:bg-red-600 text-white rounded-lg transition flex items-center gap-2 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Usuń zaznaczone"
+            >
+              {loading ? (
+                <>
+                  <Loader className="animate-spin" size={16} />
+                  <span className="hidden sm:inline">Usuwanie...</span>
+                </>
+              ) : (
+                <>
+                  <Trash2 size={16} />
+                  <span className="hidden sm:inline">Usuń</span>
+                </>
+              )}
+            </button>
+          </div>
+
+          {/* Cancel button */}
+          <button
+            onClick={onCancel}
+            disabled={loading}
+            className="p-2 hover:bg-gray-800 rounded-lg transition text-gray-400 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Anuluj (ESC)"
+          >
+            <X size={18} />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function ClipsManager() {
   const [clips, setClips] = useState([]);
@@ -22,12 +126,23 @@ function ClipsManager() {
   const [totalPages, setTotalPages] = useState(1);
   const [deleting, setDeleting] = useState({});
 
+  // Bulk selection
+  const {
+    selectedIds,
+    selectedCount,
+    toggleSelection,
+    selectAll,
+    clearSelection,
+    isSelected,
+    hasSelection,
+  } = useBulkSelection(clips);
+
   const fetchClips = useCallback(async () => {
     setLoading(true);
     try {
       const params = {
         page: currentPage,
-        limit: 10,
+        limit: 20, // Więcej klipów dla admina
         sort_by: "created_at",
         sort_order: "desc"
       };
@@ -51,6 +166,18 @@ function ClipsManager() {
     fetchClips();
   }, [fetchClips]);
 
+  // ESC key handler
+  useEffect(() => {
+    const handleEsc = (e) => {
+      if (e.key === 'Escape' && hasSelection) {
+        clearSelection();
+      }
+    };
+
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [hasSelection, clearSelection]);
+
   const handleDelete = async (clipId, clipName) => {
     if (!confirm(`Czy na pewno chcesz usunąć klip "${clipName}"?`)) {
       return;
@@ -59,12 +186,8 @@ function ClipsManager() {
     setDeleting(prev => ({ ...prev, [clipId]: true }));
 
     try {
-      // Endpoint do implementacji w backendzie: DELETE /api/admin/clips/{clipId}
       await api.delete(`/admin/clips/${clipId}`);
-
       toast.success("Klip został usunięty");
-
-      // Odśwież listę
       await fetchClips();
     } catch (err) {
       toast.error(err.response?.data?.message || "Nie udało się usunąć klipu");
@@ -73,6 +196,12 @@ function ClipsManager() {
       setDeleting(prev => ({ ...prev, [clipId]: false }));
     }
   };
+
+const handleBulkActionComplete = async (action, result) => {
+  console.log('Bulk action completed:', action, result);
+  clearSelection();
+  await fetchClips();
+};
 
   const formatFileSize = (bytes) => {
     const mb = bytes / (1024 * 1024);
@@ -112,12 +241,38 @@ function ClipsManager() {
   return (
     <div>
       <div className="mb-6">
-        <h2 className="text-xl font-semibold mb-4">
-          Zarządzanie klipami ({clips.length})
-        </h2>
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-xl font-semibold">
+              Zarządzanie klipami ({clips.length})
+            </h2>
+            {hasSelection && (
+              <p className="text-sm text-red-400 mt-1">
+                Zaznaczono {selectedCount} {selectedCount === 1 ? 'klip' : 'klipów'}
+              </p>
+            )}
+          </div>
+
+          {/* Select All Button */}
+          {clips.length > 0 && (
+            <button
+              onClick={hasSelection ? clearSelection : selectAll}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-all duration-300 ${
+                hasSelection
+                  ? 'bg-red-600 border-red-500 text-white hover:bg-red-700'
+                  : 'bg-gray-800 border-gray-700 text-gray-300 hover:border-red-500 hover:text-red-400'
+              }`}
+            >
+              <CheckSquare size={18} />
+              <span className="font-medium">
+                {hasSelection ? 'Odznacz wszystkie' : 'Zaznacz wszystkie'}
+              </span>
+            </button>
+          )}
+        </div>
 
         {/* Filters */}
-        <div className="flex gap-4 mb-4">
+        <div className="flex gap-4">
           {/* Search */}
           <div className="flex-1 relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
@@ -126,7 +281,7 @@ function ClipsManager() {
               placeholder="Szukaj po nazwie lub użytkowniku..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="input-field w-full pl-10"
+              className="w-full bg-gray-700 border border-gray-600 text-white px-4 py-2 pl-10 rounded-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition"
             />
           </div>
 
@@ -136,8 +291,9 @@ function ClipsManager() {
             onChange={(e) => {
               setFilterType(e.target.value);
               setCurrentPage(1);
+              clearSelection();
             }}
-            className="input-field"
+            className="bg-gray-700 border border-gray-600 text-white px-4 py-2 rounded-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition"
           >
             <option value="">Wszystkie typy</option>
             <option value="video">Video</option>
@@ -152,6 +308,15 @@ function ClipsManager() {
           <table className="w-full">
             <thead className="bg-gray-900 border-b border-gray-700">
               <tr>
+                <th className="text-left p-4 text-gray-300 w-12">
+                  {/* Checkbox header */}
+                  <input
+                    type="checkbox"
+                    checked={hasSelection && selectedCount === filteredClips.length}
+                    onChange={hasSelection ? clearSelection : selectAll}
+                    className="w-4 h-4 rounded border-gray-600"
+                  />
+                </th>
                 <th className="text-left p-4 text-gray-300">ID</th>
                 <th className="text-left p-4 text-gray-300">Typ</th>
                 <th className="text-left p-4 text-gray-300">Nazwa pliku</th>
@@ -166,16 +331,28 @@ function ClipsManager() {
             <tbody>
               {filteredClips.length === 0 ? (
                 <tr>
-                  <td colSpan="9" className="text-center py-8 text-gray-400">
+                  <td colSpan="10" className="text-center py-8 text-gray-400">
                     {searchTerm ? "Brak wyników wyszukiwania" : "Brak klipów"}
                   </td>
                 </tr>
               ) : (
-                filteredClips.map((clip) => (
+                filteredClips.map((clip, index) => (
                   <tr
                     key={clip.id}
-                    className="border-b border-gray-700 hover:bg-gray-700/50 transition"
+                    className={`border-b border-gray-700 transition ${
+                      isSelected(clip.id)
+                        ? 'bg-red-900/20 hover:bg-red-900/30'
+                        : 'hover:bg-gray-700/50'
+                    }`}
                   >
+                    <td className="p-4">
+                      <input
+                        type="checkbox"
+                        checked={isSelected(clip.id)}
+                        onChange={(e) => toggleSelection(clip.id, index, e.shiftKey)}
+                        className="w-4 h-4 rounded border-gray-600"
+                      />
+                    </td>
                     <td className="p-4 text-gray-400">#{clip.id}</td>
                     <td className="p-4">
                       <div className="flex items-center gap-2">
@@ -249,25 +426,41 @@ function ClipsManager() {
         </div>
       </div>
 
+      {/* Floating Toolbar */}
+      {hasSelection && (
+        <AdminFloatingToolbar
+          selectedCount={selectedCount}
+          selectedIds={selectedIds}
+          onActionComplete={handleBulkActionComplete}
+          onCancel={clearSelection}
+        />
+      )}
+
       {/* Pagination */}
       {totalPages > 1 && (
         <div className="flex justify-center gap-2 mt-6">
           <button
-            onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+            onClick={() => {
+              setCurrentPage(prev => Math.max(1, prev - 1));
+              clearSelection();
+            }}
             disabled={currentPage === 1}
-            className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded disabled:opacity-50 disabled:cursor-not-allowed transition"
           >
             Poprzednia
           </button>
 
-          <span className="px-4 py-2">
+          <span className="px-4 py-2 text-gray-300">
             Strona {currentPage} z {totalPages}
           </span>
 
           <button
-            onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+            onClick={() => {
+              setCurrentPage(prev => Math.min(totalPages, prev + 1));
+              clearSelection();
+            }}
             disabled={currentPage === totalPages}
-            className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded disabled:opacity-50 disabled:cursor-not-allowed transition"
           >
             Następna
           </button>

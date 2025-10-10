@@ -1,51 +1,102 @@
 @import "tailwindcss";
 
-
 /* Custom utilities */
 @layer utilities {
-  /* Scroll styling */
-  .scrollbar-thin::-webkit-scrollbar {
-    width: 8px;
-  }
 
-  .scrollbar-thin::-webkit-scrollbar-track {
-    background: #1f2937;
-  }
+	/* Scroll styling */
+	.scrollbar-thin::-webkit-scrollbar {
+		width: 8px;
+	}
 
-  .scrollbar-thin::-webkit-scrollbar-thumb {
-    background: #4b5563;
-    border-radius: 4px;
-  }
+	.scrollbar-thin::-webkit-scrollbar-track {
+		background: #1f2937;
+	}
 
-  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-    background: #6b7280;
-  }
+	.scrollbar-thin::-webkit-scrollbar-thumb {
+		background: #4b5563;
+		border-radius: 4px;
+	}
+
+	.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+		background: #6b7280;
+	}
 }
 
 /* Custom components */
 @layer components {
-  .btn-primary {
-    @apply bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg transition;
-  }
+	.btn-primary {
+		@apply bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg transition;
+	}
 
-  .btn-secondary {
-    @apply bg-gray-700 hover:bg-gray-600 text-white font-medium px-4 py-2 rounded-lg transition;
-  }
+	.btn-secondary {
+		@apply bg-gray-700 hover:bg-gray-600 text-white font-medium px-4 py-2 rounded-lg transition;
+	}
 
-  .input-field {
-    @apply bg-gray-700 border border-gray-600 text-white px-4 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent;
-  }
+	.input-field {
+		@apply bg-gray-700 border border-gray-600 text-white px-4 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent;
+	}
 
-  .card {
-    @apply bg-gray-800 rounded-lg shadow-lg p-6;
-  }
+	.card {
+		@apply bg-gray-800 rounded-lg shadow-lg p-6;
+	}
+}
+
+/* Bulk Actions Animations */
+@keyframes slideUp {
+	0% {
+		transform: translateX(-50%) translateY(100%);
+		opacity: 0;
+	}
+
+	100% {
+		transform: translateX(-50%) translateY(0);
+		opacity: 1;
+	}
+}
+
+@keyframes fadeIn {
+	0% {
+		opacity: 0;
+	}
+
+	100% {
+		opacity: 1;
+	}
+}
+
+@keyframes scaleIn {
+	0% {
+		transform: scale(0);
+		opacity: 0;
+	}
+
+	50% {
+		transform: scale(1.2);
+	}
+
+	100% {
+		transform: scale(1);
+		opacity: 1;
+	}
+}
+
+.animate-slideUp {
+	animation: slideUp 0.3s ease-out forwards;
+}
+
+.animate-fadeIn {
+	animation: fadeIn 0.2s ease-out forwards;
+}
+
+.animate-scaleIn {
+	animation: scaleIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
 }
 
 /* Global styles */
 body {
-  @apply bg-gray-900 text-white antialiased;
+	@apply bg-gray-900 text-white antialiased;
 }
 
 #root {
-  @apply min-h-screen flex flex-col;
+	@apply min-h-screen flex flex-col;
 }

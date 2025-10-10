@@ -1,7 +1,13 @@
 import ClipCard from "./ClipCard";
 import ClipCardSkeleton from "./ClipCardSkeleton";
 
-function ClipGrid({ clips, loading }) {
+function ClipGrid({
+  clips,
+  loading,
+  selectionMode = false,
+  selectedIds = [],
+  onSelectionToggle
+}) {
   if (loading) {
     return (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mb-8">
@@ -22,8 +28,15 @@ function ClipGrid({ clips, loading }) {
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mb-8">
-      {clips.map((clip) => (
-        <ClipCard key={clip.id} clip={clip} />
+      {clips.map((clip, index) => (
+        <ClipCard
+          key={clip.id}
+          clip={clip}
+          index={index}
+          selectionMode={selectionMode}
+          isSelected={selectedIds.includes(clip.id)}
+          onSelectionToggle={onSelectionToggle}
+        />
       ))}
     </div>
   );
