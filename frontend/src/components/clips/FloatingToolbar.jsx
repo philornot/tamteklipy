@@ -1,15 +1,12 @@
 import { useState } from 'react';
 import { Download, Tag, FolderPlus, Trash2, X } from 'lucide-react';
 import api from '../../services/api';
-import toast from "react-hot-toast";
+import { useAuth } from '../../hooks/useAuth'; // DODAJ
 
-/**
- * Floating toolbar pokazujący się przy zaznaczeniu klipów
- * Pozycjonowany fixed at bottom center
- */
 function FloatingToolbar({ selectedCount, selectedIds, onActionComplete, onCancel }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const { user } = useAuth(); // DODAJ - sprawdzamy czy admin
 
   const handleDownload = async () => {
     if (loading || selectedIds.length === 0) return;
@@ -24,7 +21,6 @@ function FloatingToolbar({ selectedCount, selectedIds, onActionComplete, onCance
         { responseType: 'blob' }
       );
 
-      // Utwórz URL do pliku ZIP
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       link.href = url;
@@ -48,12 +44,10 @@ function FloatingToolbar({ selectedCount, selectedIds, onActionComplete, onCance
   };
 
   const handleAddTags = async () => {
-    // TODO: Otwórz modal do wyboru tagów
     alert('Funkcja dodawania tagów będzie dostępna wkrótce');
   };
 
   const handleAddToSession = async () => {
-    // TODO: Otwórz modal do wyboru/utworzenia sesji
     alert('Funkcja dodawania do sesji będzie dostępna wkrótce');
   };
 
@@ -77,13 +71,11 @@ function FloatingToolbar({ selectedCount, selectedIds, onActionComplete, onCance
         action: 'delete',
       });
 
-        if (response.data.success) {
-          toast.success(response.data.message);
-          onActionComplete?.('delete', response.data);
-        } else {
-          toast.error(response.data.message);
-          onActionComplete?.('delete', response.data);
-        }
+      if (response.data.success) {
+        onActionComplete?.('delete', response.data);
+      } else {
+        setError(response.data.message || 'Nie udało się usunąć klipów');
+      }
     } catch (err) {
       console.error('Delete failed:', err);
       setError(err.response?.data?.message || 'Nie udało się usunąć klipów');
@@ -117,6 +109,7 @@ function FloatingToolbar({ selectedCount, selectedIds, onActionComplete, onCance
 
           {/* Actions */}
           <div className="flex items-center gap-2">
+            {/* Download ZIP - ZAWSZE WIDOCZNY */}
             <button
               onClick={handleDownload}
               disabled={loading}
@@ -127,37 +120,42 @@ function FloatingToolbar({ selectedCount, selectedIds, onActionComplete, onCance
               <span className="hidden sm:inline">ZIP</span>
             </button>
 
-            <button
-              onClick={handleAddTags}
-              disabled={loading}
-              className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition flex items-center gap-2 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-              title="Dodaj tagi"
-            >
-              <Tag size={16} />
-              <span className="hidden sm:inline">Tagi</span>
-            </button>
+            {/* ADMIN ONLY - Tagi, Sesje, Usuwanie */}
+            {user?.is_admin && (
+              <>
+                <button
+                  onClick={handleAddTags}
+                  disabled={loading}
+                  className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition flex items-center gap-2 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Dodaj tagi"
+                >
+                  <Tag size={16} />
+                  <span className="hidden sm:inline">Tagi</span>
+                </button>
 
-            <button
-              onClick={handleAddToSession}
-              disabled={loading}
-              className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition flex items-center gap-2 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-              title="Dodaj do sesji"
-            >
-              <FolderPlus size={16} />
-              <span className="hidden sm:inline">Sesja</span>
-            </button>
+                <button
+                  onClick={handleAddToSession}
+                  disabled={loading}
+                  className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition flex items-center gap-2 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Dodaj do sesji"
+                >
+                  <FolderPlus size={16} />
+                  <span className="hidden sm:inline">Sesja</span>
+                </button>
 
-            <div className="w-px h-6 bg-gray-700 mx-1" />
+                <div className="w-px h-6 bg-gray-700 mx-1" />
 
-            <button
-              onClick={handleDelete}
-              disabled={loading}
-              className="px-4 py-2 bg-red-600/90 hover:bg-red-600 text-white rounded-lg transition flex items-center gap-2 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-              title="Usuń"
-            >
-              <Trash2 size={16} />
-              <span className="hidden sm:inline">Usuń</span>
-            </button>
+                <button
+                  onClick={handleDelete}
+                  disabled={loading}
+                  className="px-4 py-2 bg-red-600/90 hover:bg-red-600 text-white rounded-lg transition flex items-center gap-2 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Usuń"
+                >
+                  <Trash2 size={16} />
+                  <span className="hidden sm:inline">Usuń</span>
+                </button>
+              </>
+            )}
           </div>
 
           {/* Cancel button */}
