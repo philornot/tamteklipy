@@ -2,7 +2,10 @@
 Router dla zarządzania plikami
 Tylko endpointy, logika w services
 """
+import io
 import logging
+import zipfile
+from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import List
@@ -378,6 +381,73 @@ class BulkActionResponse(BaseModel):
     failed: int
     message: str
     details: dict = {}
+
+
+@router.post("/download-bulk")
+async def download_bulk(
+        request: BulkDownloadRequest,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user)
+):
+    """
+    Bulk download — pobiera wiele klipów jako ZIP
+
+    POST /api/files/download-bulk
+    Body: { "clip_ids": [1, 2, 3] }
+    """
+    clip_ids = request.clip_ids
+
+    if len(clip_ids) > 50:
+        raise ValidationError(message="Zbyt wiele plików - maksymalnie 50 naraz", field="clip_ids")
+
+    clips = db.query(Clip).filter(Clip.id.in_(clip_ids), Clip.is_deleted == False).all()
+
+    if not clips:
+        raise NotFoundError(resource="Klipy", resource_id=None)
+
+    accessible_clips = [clip for clip in clips if can_access_clip(clip, current_user)]
+
+    if not accessible_clips:
+        raise AuthorizationError(message="Nie masz dostępu do żadnego z wybranych plików")
+
+    existing_clips = []
+    total_size = 0
+
+    for clip in accessible_clips:
+        file_path = Path(clip.file_path)
+        if file_path.exists():
+            existing_clips.append(clip)
+            total_size += clip.file_size
+
+    if not existing_clips:
+        raise StorageError(message="Żaden z plików nie został znaleziony na dysku")
+
+    MAX_TOTAL_SIZE = 1 * 1024 * 1024 * 1024  # 1GB limit
+    if total_size > MAX_TOTAL_SIZE:
+        raise ValidationError(message=f"Całkowity rozmiar przekracza limit: {total_size / (1024 ** 3):.2f}GB")
+
+    async def zip_generator():
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+            for clip in existing_clips:
+                try:
+                    zip_file.write(Path(clip.file_path), arcname=f"{clip.id}_{clip.filename}")
+                except OSError as e:
+                    logger.error(f"Failed to add file to ZIP: {e}")
+
+        buffer.seek(0)
+        while True:
+            chunk = buffer.read(8192)
+            if not chunk:
+                break
+            yield chunk
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return StreamingResponse(
+        zip_generator(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="tamteklipy_{timestamp}.zip"'}
+    )
 
 
 @router.post("/clips/bulk-action", response_model=BulkActionResponse)
