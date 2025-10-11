@@ -2,9 +2,11 @@ import {useCallback, useEffect, useRef, useState} from "react";
 import {useSearchParams} from "react-router-dom";
 import api from "../services/api";
 import ClipGrid from "../components/clips/ClipGrid";
+import FloatingToolbar from "../components/clips/FloatingToolbar";
 import SortFilter from "../components/ui/SortFilter";
-import {AlertCircle, Loader, Sparkles} from "lucide-react";
+import {AlertCircle, CheckSquare, Loader, Sparkles} from "lucide-react";
 import usePageTitle from "../hooks/usePageTitle.js";
+import {useBulkSelection} from "../hooks/useBulkSelection.js";
 
 function DashboardPage() {
     usePageTitle("Dashboard");
@@ -19,6 +21,17 @@ function DashboardPage() {
     const [searchParams, setSearchParams] = useSearchParams();
     const observerTarget = useRef(null);
     const headerRef = useRef(null);
+
+    // Bulk selection
+    const {
+        selectedIds,
+        selectedCount,
+        toggleSelection,
+        selectAll,
+        clearSelection,
+        isSelected,
+        hasSelection,
+    } = useBulkSelection(clips);
 
     // Parse query params
     const sortBy = searchParams.get("sort_by") || "created_at";
@@ -47,6 +60,18 @@ function DashboardPage() {
             }
         };
     }, []);
+
+    // ESC key handler
+    useEffect(() => {
+        const handleEsc = (e) => {
+            if (e.key === 'Escape' && hasSelection) {
+                clearSelection();
+            }
+        };
+
+        window.addEventListener('keydown', handleEsc);
+        return () => window.removeEventListener('keydown', handleEsc);
+    }, [hasSelection, clearSelection]);
 
     // Calculate gradient angle based on mouse position
     const calculateGradient = () => {
@@ -99,6 +124,7 @@ function DashboardPage() {
         setPage(1);
         setClips([]);
         setHasMore(true);
+        clearSelection();
         fetchClips(1, false);
     }, [sortBy, sortOrder, clipType]);
 
@@ -152,6 +178,21 @@ function DashboardPage() {
         });
     };
 
+    const handleBulkActionComplete = (action, result) => {
+        console.log('Bulk action completed:', action, result);
+
+        if (action === 'delete' && result?.success) {
+            // Remove deleted clips from the list
+            setClips(prev => prev.filter(clip => !selectedIds.includes(clip.id)));
+        }
+
+        // Clear selection after any action
+        clearSelection();
+
+        // Optionally refetch clips
+        // fetchClips(1, false);
+    };
+
     if (loading && clips.length === 0) {
         return (
             <div className="container mx-auto px-4 py-8 flex items-center justify-center min-h-[60vh]">
@@ -198,8 +239,30 @@ function DashboardPage() {
                             </div>
                             <p className="text-gray-400 text-sm">
                                 {clips.length} {clips.length === 1 ? "klip" : "klipów"} załadowanych
+                                {hasSelection && (
+                                    <span className="text-blue-400 ml-2">
+                                        • {selectedCount} zaznaczonych
+                                    </span>
+                                )}
                             </p>
                         </div>
+
+                        {/* Select All Button */}
+                        {clips.length > 0 && (
+                            <button
+                                onClick={hasSelection ? clearSelection : selectAll}
+                                className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-all duration-300 ${
+                                    hasSelection
+                                        ? 'bg-blue-600 border-blue-500 text-white hover:bg-blue-700'
+                                        : 'bg-gray-800 border-gray-700 text-gray-300 hover:border-blue-500 hover:text-blue-400'
+                                }`}
+                            >
+                                <CheckSquare size={18} />
+                                <span className="font-medium">
+                                    {hasSelection ? 'Odznacz wszystkie' : 'Zaznacz wszystkie'}
+                                </span>
+                            </button>
+                        )}
                     </div>
                 </div>
             </div>
@@ -212,7 +275,23 @@ function DashboardPage() {
                 onFilterChange={handleFilterChange}
             />
 
-            <ClipGrid clips={clips} loading={false}/>
+            <ClipGrid
+                clips={clips}
+                loading={false}
+                selectionMode={hasSelection}
+                selectedIds={selectedIds}
+                onSelectionToggle={toggleSelection}
+            />
+
+            {/* Floating Toolbar */}
+            {hasSelection && (
+                <FloatingToolbar
+                    selectedCount={selectedCount}
+                    selectedIds={selectedIds}
+                    onActionComplete={handleBulkActionComplete}
+                    onCancel={clearSelection}
+                />
+            )}
 
             {/* Intersection Observer Target */}
             <div ref={observerTarget} className="py-12 flex items-center justify-center">
@@ -249,12 +328,8 @@ function DashboardPage() {
                         }}
                         className="group relative px-8 py-4 bg-gray-900/80 hover:bg-gray-800/90 border border-purple-500/30 hover:border-purple-400/50 text-white font-medium rounded-xl transition-all duration-300 shadow-lg hover:shadow-purple-500/20 hover:shadow-xl backdrop-blur-sm overflow-hidden"
                     >
-                        {/* Animated background gradient */}
                         <div className="absolute inset-0 bg-gradient-to-r from-purple-600/10 via-fuchsia-500/10 to-purple-600/10 opacity-0 group-hover:opacity-100 transition-opacity duration-500 group-hover:animate-pulse"/>
-
-                        {/* Shine effect */}
                         <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 -translate-x-full group-hover:translate-x-full group-hover:duration-1000"/>
-
                         <span className="relative z-10 flex items-center gap-3 text-gray-100 group-hover:text-white">
                             Załaduj więcej
                             <Sparkles size={18} className="text-purple-400 group-hover:text-fuchsia-300 group-hover:animate-pulse transition-colors duration-300"/>
