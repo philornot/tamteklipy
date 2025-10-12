@@ -4,7 +4,7 @@
 
 RESTful API dla platformy do zarządzania klipami z gier. Wszystkie endpointy wymagają autoryzacji JWT (oprócz PUBLIC).
 
-**Base URL**: `https://your-domain.com/api`  
+**Base URL**: `https://tamteklipy.com/api`  
 **Autoryzacja**: `Authorization: Bearer <token>`
 
 ---
