@@ -6,7 +6,8 @@ function ClipGrid({
   loading,
   selectionMode = false,
   selectedIds = [],
-  onSelectionToggle
+  onSelectionToggle,
+  onClipUpdate,
 }) {
   if (loading) {
     return (
@@ -36,6 +37,7 @@ function ClipGrid({
           selectionMode={selectionMode}
           isSelected={selectedIds.includes(clip.id)}
           onSelectionToggle={onSelectionToggle}
+          onClipUpdate={onClipUpdate} // PRZEKAŻ DALEJ
         />
       ))}
     </div>

@@ -1,18 +1,11 @@
-import { useEffect, useState, useCallback, useRef } from "react";
-import {
-  X,
-  Download,
-  User,
-  Calendar,
-  Clock,
-  ImageIcon,
-} from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Calendar, Clock, Download, ImageIcon, User, X } from "lucide-react";
 import api from "../../services/api";
 import AwardSection from "./AwardSection";
 import CommentSection from "../comments/CommentSection";
-import { getStreamUrl, getDownloadUrl } from "../../utils/urlHelper";
+import { getDownloadUrl, getStreamUrl } from "../../utils/urlHelper";
 
-function ClipModal({ clip, onClose }) {
+function ClipModal({ clip, onClose, onClipUpdate }) {
   const [clipDetails, setClipDetails] = useState(null);
   const [loading, setLoading] = useState(true);
   const videoRef = useRef(null);
@@ -51,8 +44,13 @@ function ClipModal({ clip, onClose }) {
     if (clipDetails) {
       setClipDetails({
         ...clipDetails,
-        awards: newAwards
+        awards: newAwards,
       });
+    }
+
+    // Powiadom parent o zmianie
+    if (onClipUpdate) {
+      onClipUpdate(clip.id);
     }
   };
 
@@ -73,9 +71,10 @@ function ClipModal({ clip, onClose }) {
   };
 
   // Pobierz URL do media
-  const mediaUrl = clip.clip_type === "video"
-    ? getStreamUrl(clip.id)
-    : getDownloadUrl(clip.id);
+  const mediaUrl =
+    clip.clip_type === "video"
+      ? getStreamUrl(clip.id)
+      : getDownloadUrl(clip.id);
 
   return (
     <div
@@ -174,7 +173,12 @@ function ClipModal({ clip, onClose }) {
 
               {/* Comments Section */}
               <div className="mt-8 border-t border-gray-700 pt-6">
-                {!loading && <CommentSection clipId={clip.id} videoRef={clip.clip_type === "video" ? videoRef : null} />}
+                {!loading && (
+                  <CommentSection
+                    clipId={clip.id}
+                    videoRef={clip.clip_type === "video" ? videoRef : null}
+                  />
+                )}
               </div>
             </div>
 
@@ -186,7 +190,7 @@ function ClipModal({ clip, onClose }) {
                 <AwardSection
                   clipId={clip.id}
                   initialAwards={clipDetails.awards}
-                  onAwardsChange={handleAwardsChange}
+                  onAwardsChange={handleAwardsChange} // To już jest
                 />
               ) : (
                 <div className="text-red-400">
