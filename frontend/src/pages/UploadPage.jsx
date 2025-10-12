@@ -12,6 +12,7 @@ import {
 import toast from "react-hot-toast";
 import useOptimizedUpload from "../hooks/useOptimizedUpload";
 import { usePageTitle } from "../hooks/usePageTitle";
+import { Button, Card, Badge } from "../components/ui/StyledComponents";
 
 const MAX_VIDEO_SIZE = 500 * 1024 * 1024;
 const MAX_IMAGE_SIZE = 100 * 1024 * 1024;
@@ -27,7 +28,6 @@ function UploadPage() {
   const [uploading, setUploading] = useState(false);
   const [dragActive, setDragActive] = useState(false);
 
-  /** Format rozmiaru pliku w MB/KB */
   const formatFileSize = (bytes) => {
     const mb = bytes / (1024 * 1024);
     return mb < 1
@@ -35,7 +35,6 @@ function UploadPage() {
       : `${mb.toFixed(1)} MB`;
   };
 
-  /** Walidacja i dodanie plików */
   const validateAndAddFiles = (files) => {
     const fileArray = Array.from(files);
     const validFiles = [];
@@ -58,7 +57,7 @@ function UploadPage() {
 
       validFiles.push({
         file,
-        preview: URL.createObjectURL(/** @type {Blob} */ (file)),
+        preview: URL.createObjectURL(file),
         type: isVideo ? "video" : "image",
         status: "pending",
         progress: 0,
@@ -169,7 +168,6 @@ function UploadPage() {
     }
   };
 
-  // Zliczanie statusów (aktualizuje się przy każdym renderze)
   const pendingFiles = selectedFiles.filter((f) => f.status === "pending").length;
   const successFiles = selectedFiles.filter((f) => f.status === "success").length;
   const errorFiles = selectedFiles.filter((f) => f.status === "error").length;
@@ -181,13 +179,13 @@ function UploadPage() {
         <p className="text-gray-400">Prześlij klipy video lub screenshoty</p>
       </div>
 
-      {/* Drag & Drop */}
+      {/* Drag & Drop Area */}
       <div className="mb-6">
         <div
-          className={`border-2 border-dashed rounded-lg p-12 text-center transition-colors ${
+          className={`border-2 border-dashed rounded-card p-12 text-center transition-all duration-300 ${
             dragActive
-              ? "border-purple-500 bg-purple-500/10"
-              : "border-gray-600 hover:border-purple-500"
+              ? "border-primary-500 bg-primary-500/10"
+              : "border-dark-600 hover:border-primary-500"
           } ${uploading ? "opacity-50 pointer-events-none" : ""}`}
           onDragEnter={handleDrag}
           onDragLeave={handleDrag}
@@ -216,7 +214,7 @@ function UploadPage() {
         </div>
       </div>
 
-      {/* Lista plików */}
+      {/* Files List */}
       {selectedFiles.length > 0 && (
         <div className="mb-6">
           <div className="flex items-center justify-between mb-4">
@@ -237,43 +235,43 @@ function UploadPage() {
             )}
           </div>
 
-          {/* Podsumowanie */}
+          {/* Summary */}
           {(successFiles > 0 || errorFiles > 0) && (
             <div className="flex gap-4 mb-4 text-sm">
               {successFiles > 0 && (
-                <div className="flex items-center gap-2 text-green-400">
+                <Badge variant="success" className="flex items-center gap-2">
                   <CheckCircle size={16} />
-                  <span>Sukces: {successFiles}</span>
-                </div>
+                  Sukces: {successFiles}
+                </Badge>
               )}
               {errorFiles > 0 && (
-                <div className="flex items-center gap-2 text-red-400">
+                <Badge variant="danger" className="flex items-center gap-2">
                   <AlertCircle size={16} />
-                  <span>Błędy: {errorFiles}</span>
-                </div>
+                  Błędy: {errorFiles}
+                </Badge>
               )}
               {pendingFiles > 0 && (
-                <div className="flex items-center gap-2 text-gray-400">
-                  <span>Oczekuje: {pendingFiles}</span>
-                </div>
+                <Badge variant="default" className="flex items-center gap-2">
+                  Oczekuje: {pendingFiles}
+                </Badge>
               )}
             </div>
           )}
 
           <div className="space-y-3">
             {selectedFiles.map((fileObj, index) => (
-              <div
+              <Card
                 key={index}
-                className={`bg-gray-800 rounded-lg p-4 border transition-colors ${
+                className={`p-4 ${
                   fileObj.status === "success"
-                    ? "border-green-700"
+                    ? "border-success"
                     : fileObj.status === "error"
-                    ? "border-red-700"
-                    : "border-gray-700"
+                    ? "border-danger"
+                    : ""
                 }`}
               >
                 <div className="flex items-center gap-4">
-                  <div className="w-20 h-20 bg-gray-900 rounded overflow-hidden flex-shrink-0">
+                  <div className="w-20 h-20 bg-dark-900 rounded overflow-hidden flex-shrink-0">
                     {fileObj.type === "video" ? (
                       <video src={fileObj.preview} className="w-full h-full object-cover" />
                     ) : (
@@ -284,9 +282,9 @@ function UploadPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
                       {fileObj.type === "video" ? (
-                        <FileVideo size={16} className="text-purple-400" />
+                        <FileVideo size={16} className="text-primary-400" />
                       ) : (
-                        <ImageIcon size={16} className="text-green-400" />
+                        <ImageIcon size={16} className="text-success" />
                       )}
                       <span className="font-medium truncate">{fileObj.file.name}</span>
                     </div>
@@ -296,28 +294,28 @@ function UploadPage() {
                     </p>
 
                     {fileObj.status === "success" && (
-                      <div className="flex items-center gap-2 text-green-400 text-sm">
+                      <Badge variant="success" className="flex items-center gap-2 w-fit">
                         <CheckCircle size={14} />
-                        <span>Przesłano pomyślnie</span>
-                      </div>
+                        Przesłano pomyślnie
+                      </Badge>
                     )}
 
                     {fileObj.status === "error" && (
-                      <div className="flex items-center gap-2 text-red-400 text-sm">
+                      <Badge variant="danger" className="flex items-center gap-2 w-fit">
                         <AlertCircle size={14} />
-                        <span>Błąd: {fileObj.error}</span>
-                      </div>
+                        Błąd: {fileObj.error}
+                      </Badge>
                     )}
 
                     {fileObj.status === "uploading" && (
                       <div className="space-y-2">
-                        <div className="flex items-center gap-2 text-purple-400 text-sm">
+                        <div className="flex items-center gap-2 text-primary-400 text-sm">
                           <Loader size={14} className="animate-spin" />
                           <span>Wysyłanie... {fileObj.progress}%</span>
                         </div>
-                        <div className="w-full bg-gray-700 rounded-full h-1.5 overflow-hidden">
+                        <div className="w-full bg-dark-700 rounded-full h-1.5 overflow-hidden">
                           <div
-                            className="bg-purple-500 h-full transition-all duration-300"
+                            className="bg-primary-500 h-full transition-all duration-300"
                             style={{ width: `${fileObj.progress}%` }}
                           />
                         </div>
@@ -334,14 +332,14 @@ function UploadPage() {
                   {!uploading && (
                     <button
                       onClick={() => removeFile(index)}
-                      className="p-2 hover:bg-gray-700 rounded transition text-gray-400 hover:text-red-400"
+                      className="p-2 hover:bg-dark-700 rounded-button transition text-gray-400 hover:text-red-400"
                       title="Usuń"
                     >
                       <X size={20} />
                     </button>
                   )}
                 </div>
-              </div>
+              </Card>
             ))}
           </div>
         </div>
@@ -349,39 +347,36 @@ function UploadPage() {
 
       {/* Upload Button */}
       {selectedFiles.length > 0 && pendingFiles > 0 && (
-        <button
+        <Button
           onClick={handleUpload}
           disabled={uploading}
-          className="w-full bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-3 px-6 rounded-lg transition-colors flex items-center justify-center gap-2"
+          variant="primary"
+          className="w-full"
         >
           {uploading ? (
             <>
               <Loader className="animate-spin" size={20} />
-              <span>Wysyłanie {pendingFiles} plików...</span>
+              Wysyłanie {pendingFiles} plików...
             </>
           ) : (
             <>
               <Upload size={20} />
-              <span>
-                Wyślij {pendingFiles} {pendingFiles === 1 ? "plik" : "plików"}
-              </span>
+              Wyślij {pendingFiles} {pendingFiles === 1 ? "plik" : "plików"}
             </>
           )}
-        </button>
+        </Button>
       )}
 
-      <div className="mt-8 bg-gray-800 rounded-lg p-4 border border-purple-700/30">
-        <h3 className="font-semibold mb-2 text-sm text-purple-400">
+      <Card variant="glow" className="mt-8 p-4">
+        <h3 className="font-semibold mb-2 text-sm text-primary-400">
           Informacje
         </h3>
         <ul className="text-sm text-gray-400 space-y-1">
           <li>• Wiele plików naraz</li>
-          <li>
-            • Video: MP4, WebM, MOV (max {MAX_VIDEO_SIZE / (1024 * 1024)}MB)
-          </li>
+          <li>• Video: MP4, WebM, MOV (max {MAX_VIDEO_SIZE / (1024 * 1024)}MB)</li>
           <li>• Obrazy: PNG, JPG (max {MAX_IMAGE_SIZE / (1024 * 1024)}MB)</li>
         </ul>
-      </div>
+      </Card>
     </div>
   );
 }

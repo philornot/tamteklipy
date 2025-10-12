@@ -18,7 +18,6 @@ function LoginPage() {
     e.preventDefault();
     setError("");
 
-    // Walidacja: wymagaj tylko username
     if (!username) {
       setError("Wprowadź nazwę użytkownika");
       return;
@@ -39,16 +38,16 @@ function LoginPage() {
 
   return (
     <div className="min-h-screen bg-gray-900 flex items-center justify-center px-4">
-      <div className="bg-gray-800 p-8 rounded-lg shadow-lg w-full max-w-md border border-gray-700">
+      <div className="card p-8 w-full max-w-md glow">
         {/* Logo */}
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-white mb-2">TamteKlipy</h1>
+          <h1 className="text-3xl font-bold gradient-text-primary mb-2">TamteKlipy</h1>
           <p className="text-gray-400">Zaloguj się do platformy</p>
         </div>
 
         {/* Error message */}
         {error && (
-          <div className="bg-red-900/50 border border-red-700 text-red-200 px-4 py-3 rounded mb-4">
+          <div className="bg-red-500/20 border border-red-500 text-red-200 px-4 py-3 rounded-button mb-4">
             {error}
           </div>
         )}
@@ -56,15 +55,14 @@ function LoginPage() {
         {/* Form */}
         <form onSubmit={handleSubmit}>
           <div className="mb-4">
-            <label htmlFor="username" className="block text-gray-300 mb-2">
+            <label className="block text-gray-300 mb-2 text-sm font-medium">
               Username
             </label>
             <input
-              id="username"
+              className="input-field"
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              className="input-field w-full"
               placeholder="Wprowadź nazwę użytkownika"
               disabled={loading}
               required
@@ -72,15 +70,14 @@ function LoginPage() {
           </div>
 
           <div className="mb-6">
-            <label htmlFor="password" className="block text-gray-300 mb-2">
+            <label className="block text-gray-300 mb-2 text-sm font-medium">
               Hasło
             </label>
             <input
-              id="password"
+              className="input-field"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="input-field w-full"
               placeholder="••••••••"
               disabled={loading}
             />
@@ -89,7 +86,7 @@ function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="btn-primary w-full flex items-center justify-center gap-2"
+            className="btn-primary w-full"
           >
             {loading ? (
               <>
@@ -105,7 +102,7 @@ function LoginPage() {
           </button>
         </form>
 
-        {/* Test credentials hint */}
+        {/* Footer hint */}
         <div className="mt-6 pt-6 border-t border-gray-700">
           <p className="text-gray-500 text-sm text-center">
             todo: tutaj napisz później coś mądrego

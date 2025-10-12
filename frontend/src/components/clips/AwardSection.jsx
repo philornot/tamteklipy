@@ -4,6 +4,7 @@ import * as LucideIcons from "lucide-react";
 import { useAuth } from "../../hooks/useAuth";
 import api from "../../services/api";
 import { getBaseUrl } from "../../utils/urlHelper";
+import { Button, Badge } from "../ui/StyledComponents";
 
 function AwardSection({ clipId, initialAwards, onAwardsChange }) {
   const [awards, setAwards] = useState(initialAwards || []);
@@ -53,8 +54,7 @@ function AwardSection({ clipId, initialAwards, onAwardsChange }) {
 
       const newAwards = [...awards, response.data];
       setAwards(newAwards);
-      
-      // Notify parent about change
+
       if (onAwardsChange) {
         onAwardsChange(newAwards);
       }
@@ -77,8 +77,7 @@ function AwardSection({ clipId, initialAwards, onAwardsChange }) {
 
       const newAwards = awards.filter((a) => a.id !== awardId);
       setAwards(newAwards);
-      
-      // Notify parent about change
+
       if (onAwardsChange) {
         onAwardsChange(newAwards);
       }
@@ -102,7 +101,6 @@ function AwardSection({ clipId, initialAwards, onAwardsChange }) {
     const awardType = awardTypesMap[award.award_name];
     if (!awardType) return <span className={`text-${size === "8" ? "2xl" : "xl"}`}>🏆</span>;
 
-    // Custom icon
     if (awardType.icon_type === "custom" && awardType.custom_icon_url) {
       return (
         <img
@@ -116,21 +114,19 @@ function AwardSection({ clipId, initialAwards, onAwardsChange }) {
         />
       );
     }
-    
-    // Lucide icon
+
     if (awardType.icon_type === "lucide" && awardType.lucide_icon) {
       const componentName = awardType.lucide_icon
         .split("-")
         .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
         .join("");
       const IconComponent = LucideIcons[componentName];
-      
+
       if (IconComponent) {
         return <IconComponent size={size === "8" ? 32 : 24} />;
       }
     }
-    
-    // Emoji fallback
+
     return <span className={`text-${size === "8" ? "2xl" : "xl"}`}>{awardType.icon}</span>;
   };
 
@@ -144,7 +140,7 @@ function AwardSection({ clipId, initialAwards, onAwardsChange }) {
         </h3>
 
         {error && (
-          <div className="bg-red-900/50 border border-red-700 text-red-200 px-3 py-2 rounded text-sm mb-3">
+          <div className="bg-danger/20 border border-danger text-red-200 px-3 py-2 rounded-button text-sm mb-3">
             {error}
           </div>
         )}
@@ -156,19 +152,18 @@ function AwardSection({ clipId, initialAwards, onAwardsChange }) {
             myAwards.map((award) => {
               const alreadyGiven = hasGivenAward(award.award_name);
               const awardType = awardTypesMap[award.award_name];
-              
+
               return (
                 <button
                   key={award.award_name}
                   onClick={() => !alreadyGiven && handleGiveAward(award.award_name)}
                   disabled={loading || alreadyGiven}
-                  className={`w-full p-3 rounded-lg border transition flex items-center gap-3 ${
+                  className={`w-full p-3 rounded-card border transition-all duration-300 flex items-center gap-3 ${
                     alreadyGiven
-                      ? "bg-gray-700/50 border-gray-600 cursor-not-allowed opacity-50"
-                      : "bg-gray-700 border-gray-600 hover:bg-gray-600 hover:border-blue-500"
+                      ? "bg-dark-700/50 border-dark-600 cursor-not-allowed opacity-50"
+                      : "bg-dark-700 border-dark-600 hover:bg-dark-600 hover:border-primary-500"
                   }`}
                 >
-                  {/* Icon with proper rendering */}
                   <div className="flex-shrink-0">
                     {awardType && renderAwardIcon({ award_name: award.award_name }, "8")}
                     {!awardType && <span className="text-2xl">{award.icon}</span>}
@@ -178,9 +173,13 @@ function AwardSection({ clipId, initialAwards, onAwardsChange }) {
                     <div className="font-semibold">{award.display_name}</div>
                     <div className="text-xs text-gray-400">{award.description}</div>
                   </div>
-                  
+
                   {loading && !alreadyGiven && <Loader className="animate-spin" size={16} />}
-                  {alreadyGiven && <span className="text-green-500 text-sm">✓ Przyznano</span>}
+                  {alreadyGiven && (
+                    <Badge variant="success" className="text-xs">
+                      ✓ Przyznano
+                    </Badge>
+                  )}
                 </button>
               );
             })
@@ -199,7 +198,7 @@ function AwardSection({ clipId, initialAwards, onAwardsChange }) {
             {awards.map((award) => (
               <div
                 key={award.id}
-                className="flex items-center justify-between p-3 bg-gray-700 rounded-lg border border-gray-600"
+                className="flex items-center justify-between p-3 bg-dark-700 rounded-card border border-dark-600"
               >
                 <div className="flex items-center gap-3 flex-1">
                   <div className="flex-shrink-0">
@@ -216,14 +215,16 @@ function AwardSection({ clipId, initialAwards, onAwardsChange }) {
                 </div>
 
                 {canRemoveAward(award) && (
-                  <button
+                  <Button
                     onClick={() => handleRemoveAward(award.id)}
                     disabled={loading}
-                    className="p-2 text-red-400 hover:text-red-300 hover:bg-gray-600 rounded transition"
+                    variant="ghost"
+                    size="sm"
+                    className="p-2 text-red-400 hover:text-red-300"
                     title="Usuń nagrodę"
                   >
                     <Trash2 size={16} />
-                  </button>
+                  </Button>
                 )}
               </div>
             ))}

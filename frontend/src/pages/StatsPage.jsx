@@ -3,6 +3,7 @@ import { TrendingUp, Users, Award, Film, AlertCircle, Loader } from 'lucide-reac
 import api from '../services/api'
 import { useAuth } from '../hooks/useAuth'
 import usePageTitle from "../hooks/usePageTitle.js";
+import { Card } from '../components/ui/StyledComponents';
 
 function StatsPage() {
   usePageTitle("Statystyki");
@@ -28,7 +29,7 @@ function StatsPage() {
   if (loading) {
     return (
       <div className="container mx-auto px-4 py-8 flex items-center justify-center min-h-[60vh]">
-        <Loader className="animate-spin text-blue-500" size={48} />
+        <Loader className="animate-spin text-primary-500" size={48} />
       </div>
     )
   }
@@ -55,7 +56,7 @@ function StatsPage() {
 
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-        <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
+        <Card className="p-4">
           <div className="flex items-center gap-3">
             <Award className="text-yellow-500" size={32} />
             <div>
@@ -63,9 +64,9 @@ function StatsPage() {
               <p className="text-2xl font-bold">{stats.total_awards}</p>
             </div>
           </div>
-        </div>
+        </Card>
 
-        <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
+        <Card className="p-4">
           <div className="flex items-center gap-3">
             <Users className="text-blue-500" size={32} />
             <div>
@@ -73,9 +74,9 @@ function StatsPage() {
               <p className="text-2xl font-bold">{stats.most_active_users?.length || 0}</p>
             </div>
           </div>
-        </div>
+        </Card>
 
-        <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
+        <Card className="p-4">
           <div className="flex items-center gap-3">
             <Film className="text-green-500" size={32} />
             <div>
@@ -83,10 +84,10 @@ function StatsPage() {
               <p className="text-2xl font-bold">{stats.top_clips_by_awards?.length || 0}</p>
             </div>
           </div>
-        </div>
+        </Card>
 
         {user && (
-          <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
+          <Card className="p-4">
             <div className="flex items-center gap-3">
               <TrendingUp className="text-purple-500" size={32} />
               <div>
@@ -96,12 +97,12 @@ function StatsPage() {
                 </p>
               </div>
             </div>
-          </div>
+          </Card>
         )}
       </div>
 
       {/* Most Popular Award */}
-      <div className="bg-gray-800 rounded-lg p-6 border border-gray-700 mb-6">
+      <Card className="p-6 mb-6">
         <h3 className="text-lg font-semibold mb-4">Najpopularniejsza nagroda</h3>
         {stats.most_popular_award?.award_name ? (
           <div className="flex items-center gap-4">
@@ -114,10 +115,10 @@ function StatsPage() {
         ) : (
           <p className="text-gray-400">Brak danych - nie przyznano jeszcze żadnych nagród</p>
         )}
-      </div>
+      </Card>
 
       {/* Most Active Users */}
-      <div className="bg-gray-800 rounded-lg p-6 border border-gray-700 mb-6">
+      <Card className="p-6 mb-6">
         <h3 className="text-lg font-semibold mb-4">Najbardziej aktywni użytkownicy</h3>
         {stats.most_active_users && stats.most_active_users.length > 0 ? (
           <div className="space-y-3">
@@ -136,10 +137,10 @@ function StatsPage() {
             Brak aktywnych użytkowników
           </p>
         )}
-      </div>
+      </Card>
 
       {/* Top Clips */}
-      <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+      <Card className="p-6">
         <h3 className="text-lg font-semibold mb-4">Top klipy według nagród</h3>
         {stats.top_clips_by_awards && stats.top_clips_by_awards.length > 0 ? (
           <div className="space-y-3">
@@ -164,7 +165,7 @@ function StatsPage() {
             Brak nagrodzonych klipów
           </p>
         )}
-      </div>
+      </Card>
     </div>
   )
 }

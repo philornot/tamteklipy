@@ -7,6 +7,7 @@ import CreateAwardModal from "../components/awards/CreateAwardModal";
 import EditMyAwardModal from "../components/awards/EditMyAwardModal";
 import { getBaseUrl } from "../utils/urlHelper";
 import usePageTitle from "../hooks/usePageTitle.js";
+import { Button, Card, Badge } from "../components/ui/StyledComponents";
 
 function MyAwardsPage() {
   usePageTitle("Moje nagrody");
@@ -127,17 +128,18 @@ function MyAwardsPage() {
       <div className="mb-6">
         <div className="flex items-center justify-between mb-2">
           <h1 className="text-3xl font-bold">Moje Nagrody</h1>
-          <button
+          <Button
             onClick={() => setShowCreateModal(true)}
             disabled={customAwards.length >= 5}
-            className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-lg transition-colors flex items-center gap-2"
+            variant="primary"
+            className="flex items-center gap-2"
             title={
               customAwards.length >= 5 ? "Maksymalnie 5 nagród" : "Utwórz nagrodę"
             }
           >
             <Plus size={20} />
             Nowa nagroda
-          </button>
+          </Button>
         </div>
         <p className="text-gray-400">
           Własne nagrody ({customAwards.length}/5)
@@ -145,20 +147,22 @@ function MyAwardsPage() {
       </div>
 
       {customAwards.length === 0 ? (
-        <div className="text-center py-16 bg-gray-800 rounded-lg border border-gray-700">
+        <Card className="text-center py-16">
           <Award size={64} className="mx-auto mb-4 text-gray-600" />
           <p className="text-xl text-gray-300 mb-2">Nie masz jeszcze własnych nagród</p>
           <p className="text-gray-500 mb-6">
             Stwórz własne nagrody do przyznawania klipom
           </p>
-          <button
+          <Button
             onClick={() => setShowCreateModal(true)}
-            className="bg-purple-600 hover:bg-purple-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors inline-flex items-center gap-2"
+            variant="primary"
+            size="lg"
+            className="inline-flex items-center gap-2"
           >
             <Sparkles size={20} />
             Utwórz pierwszą nagrodę
-          </button>
-        </div>
+          </Button>
+        </Card>
       ) : (
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
@@ -166,9 +170,10 @@ function MyAwardsPage() {
               const awardType = awardTypesMap[award.id];
 
               return (
-                <div
+                <Card
                   key={award.id}
-                  className="bg-gray-800 rounded-lg p-5 border border-gray-700 hover:border-purple-600 transition-colors"
+                  hoverable
+                  className="p-5"
                 >
                   <div className="flex items-start gap-4 mb-4">
                     <div className="flex-shrink-0">{renderIcon(award)}</div>
@@ -179,9 +184,9 @@ function MyAwardsPage() {
                           {award.display_name}
                         </h3>
                         {award.is_personal && (
-                          <span className="text-xs bg-purple-600 px-2 py-0.5 rounded flex-shrink-0">
+                          <Badge variant="primary">
                             Imienna
-                          </span>
+                          </Badge>
                         )}
                       </div>
 
@@ -205,23 +210,27 @@ function MyAwardsPage() {
                     </div>
                   </div>
 
-                  <div className="flex gap-2 pt-3 border-t border-gray-700">
-                    <button
+                  <div className="flex gap-2 pt-3 border-t border-dark-700">
+                    <Button
                       onClick={() => setEditingAward(award)}
-                      className="flex-1 py-2 px-3 text-purple-400 hover:text-purple-300 hover:bg-gray-700 rounded transition-colors flex items-center justify-center gap-2 text-sm font-medium"
+                      variant="ghost"
+                      size="sm"
+                      className="flex-1 text-primary-400"
                     >
                       <Edit2 size={16} />
                       Edytuj
-                    </button>
+                    </Button>
 
                     {!award.is_personal && (
-                      <button
+                      <Button
                         onClick={() => handleDelete(award.id, award.display_name)}
-                        className="flex-1 py-2 px-3 text-red-400 hover:text-red-300 hover:bg-gray-700 rounded transition-colors flex items-center justify-center gap-2 text-sm font-medium"
+                        variant="ghost"
+                        size="sm"
+                        className="flex-1 text-red-400 hover:text-red-300"
                       >
                         <Trash2 size={16} />
                         Usuń
-                      </button>
+                      </Button>
                     )}
 
                     {award.is_personal && (
@@ -230,14 +239,13 @@ function MyAwardsPage() {
                       </div>
                     )}
                   </div>
-                </div>
+                </Card>
               );
             })}
           </div>
 
-          {/* Uproszczony info box */}
-          <div className="bg-gray-800 rounded-lg p-4 border border-purple-700/30">
-            <h3 className="font-semibold mb-2 text-sm flex items-center gap-2 text-purple-400">
+          <Card variant="glow" className="p-4">
+            <h3 className="font-semibold mb-2 text-sm flex items-center gap-2 text-primary-400">
               <Sparkles size={16} />
               Informacje
             </h3>
@@ -246,7 +254,7 @@ function MyAwardsPage() {
               <li>• Nagrody imienne są chronione</li>
               <li>• Ikony: Lucide lub własne obrazki</li>
             </ul>
-          </div>
+          </Card>
         </>
       )}
 

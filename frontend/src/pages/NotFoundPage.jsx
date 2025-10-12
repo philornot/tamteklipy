@@ -16,12 +16,11 @@ function NotFoundPage() {
                     </p>
                 </div>
 
-                <Link
-                    to="/dashboard"
-                    className="inline-flex items-center gap-2 btn-primary"
-                >
-                    <Home size={20}/>
-                    Wróć do Dashboard
+                <Link to="/dashboard">
+                    <button className="btn-primary inline-flex items-center gap-2 px-6 py-3 text-lg">
+                        <Home size={20}/>
+                        Wróć do Dashboard
+                    </button>
                 </Link>
             </div>
         </div>

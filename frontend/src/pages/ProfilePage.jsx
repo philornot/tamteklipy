@@ -4,6 +4,7 @@ import {Loader, Lock, Mail, Save, User, LockOpen} from "lucide-react";
 import api from "../services/api";
 import toast from "react-hot-toast";
 import usePageTitle from "../hooks/usePageTitle.js";
+import { Button, Card, Input } from "../components/ui/StyledComponents";
 
 function ProfilePage() {
     usePageTitle("Profil użytkownika");
@@ -32,7 +33,6 @@ function ProfilePage() {
     const handleSubmit = async (e) => {
         e.preventDefault();
 
-        // Walidacja hasła (tylko zgodność, gdy ustawiane)
         if (!emptyPassword && formData.password && formData.password !== formData.confirmPassword) {
             toast.error("Hasła nie są identyczne");
             return;
@@ -47,7 +47,6 @@ function ProfilePage() {
             };
 
             if (emptyPassword) {
-                // jawnie ustaw puste hasło
                 updateData.password = "";
             } else if (formData.password) {
                 updateData.password = formData.password;
@@ -55,13 +54,11 @@ function ProfilePage() {
 
             const response = await api.patch("/auth/me", updateData);
 
-            // Zaktualizuj user w context i localStorage
             setUser(response.data);
             localStorage.setItem("user", JSON.stringify(response.data));
 
             toast.success("Profil zaktualizowany");
 
-            // Wyczyść hasła i flagę
             setFormData({
                 ...formData,
                 password: "",
@@ -76,7 +73,6 @@ function ProfilePage() {
         }
     };
 
-    // Ustaw puste hasło i od razu zapisz zmiany
     const handleSetEmptyPasswordAndSave = async () => {
         if (!user || loading) return;
         setLoading(true);
@@ -84,7 +80,7 @@ function ProfilePage() {
             const updateData = {
                 full_name: formData.full_name,
                 email: formData.email || null,
-                password: "", // jawnie puste hasło
+                password: "",
             };
             const response = await api.patch("/auth/me", updateData);
             setUser(response.data);
@@ -107,7 +103,6 @@ function ProfilePage() {
     const handleChange = (e) => {
         const { name, value } = e.target;
         if (name === "password") {
-            // Każde ręczne wpisanie hasła anuluje tryb pustego hasła
             if (value !== "") setEmptyPassword(false);
         }
         setFormData({
@@ -122,56 +117,53 @@ function ProfilePage() {
         <div className="container mx-auto px-4 py-8 max-w-2xl">
             <h1 className="text-3xl font-bold mb-6">Profil użytkownika</h1>
 
-            <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+            <Card className="p-6">
                 <form onSubmit={handleSubmit} className="space-y-6" autoComplete="on">
                     {/* Username (read-only) */}
-                    <div>
-                        <label className="block text-gray-300 mb-2">
-                            <User size={16} className="inline mr-2"/>
-                            Username
-                        </label>
-                        <input
-                            type="text"
-                            name="username"
-                            value={user.username}
-                            readOnly
-                            autoComplete="username"
-                            className="input-field w-full bg-gray-700 cursor-not-allowed"
-                        />
-                        <p className="text-xs text-gray-500 mt-1">
-                            Username nie może być zmieniony
-                        </p>
-                    </div>
+                    <Input
+                        label={
+                            <span className="flex items-center gap-2">
+                                <User size={16} />
+                                Username
+                            </span>
+                        }
+                        type="text"
+                        name="username"
+                        value={user.username}
+                        readOnly
+                        autoComplete="username"
+                        className="bg-dark-700 cursor-not-allowed"
+                        containerClassName="mb-4"
+                    />
+                    <p className="text-xs text-gray-500 -mt-4">
+                        Username nie może być zmieniony
+                    </p>
 
                     {/* Full Name */}
-                    <div>
-                        <label className="block text-gray-300 mb-2">
-                            Wyświetlana nazwa
-                        </label>
-                        <input
-                            type="text"
-                            name="full_name"
-                            value={formData.full_name}
-                            onChange={handleChange}
-                            className="input-field w-full"
-                            placeholder="Jan Kowalski"
-                            maxLength={100}
-                            autoComplete="name"
-                        />
-                    </div>
+                    <Input
+                        label="Wyświetlana nazwa"
+                        type="text"
+                        name="full_name"
+                        value={formData.full_name}
+                        onChange={handleChange}
+                        placeholder="Jan Kowalski"
+                        maxLength={100}
+                        autoComplete="name"
+                    />
 
                     {/* Email */}
                     <div>
-                        <label className="block text-gray-300 mb-2">
-                            <Mail size={16} className="inline mr-2"/>
-                            Email
-                        </label>
-                        <input
+                        <Input
+                            label={
+                                <span className="flex items-center gap-2">
+                                    <Mail size={16} />
+                                    Email
+                                </span>
+                            }
                             type="email"
                             name="email"
                             value={formData.email}
                             onChange={handleChange}
-                            className="input-field w-full"
                             placeholder="email@example.com"
                             autoComplete="email"
                         />
@@ -182,57 +174,58 @@ function ProfilePage() {
 
                     {/* Password */}
                     <div>
-                        <label className="block text-gray-300 mb-2">
-                            <Lock size={16} className="inline mr-2"/>
-                            Nowe hasło
-                        </label>
-                        <input
+                        <Input
+                            label={
+                                <span className="flex items-center gap-2">
+                                    <Lock size={16} />
+                                    Nowe hasło
+                                </span>
+                            }
                             type="password"
                             name="password"
                             value={formData.password}
                             onChange={handleChange}
-                            className="input-field w-full"
                             placeholder="Zostaw puste aby nie zmieniać"
                             autoComplete="new-password"
                         />
                         <div className="flex items-center gap-2 mt-3">
-                            <button
+                            <Button
                                 type="button"
                                 onClick={handleSetEmptyPasswordAndSave}
                                 disabled={loading}
-                                className="inline-flex items-center gap-2 text-sm px-3 py-2 rounded bg-red-600 hover:bg-red-700 text-white disabled:opacity-50"
+                                variant="danger"
+                                size="sm"
+                                className="inline-flex items-center gap-2"
                                 title="Ustaw puste hasło i zapisz zmiany"
                             >
                                 <LockOpen size={16} />
                                 Ustaw puste hasło i zapisz
-                            </button>
-                            <span className="text-xs text-yellow-400">Puste hasło jest niezalecane, no ale co ja ci będę bronić.</span>
+                            </Button>
+                            <span className="text-xs text-warning">
+                                Puste hasło jest niezalecane, no ale co ja ci będę bronić.
+                            </span>
                         </div>
                     </div>
 
                     {/* Confirm Password */}
                     {formData.password && (
-                        <div>
-                            <label className="block text-gray-300 mb-2">
-                                Potwierdź hasło
-                            </label>
-                            <input
-                                type="password"
-                                name="confirmPassword"
-                                value={formData.confirmPassword}
-                                onChange={handleChange}
-                                className="input-field w-full"
-                                placeholder="Powtórz nowe hasło"
-                                autoComplete="new-password"
-                            />
-                        </div>
+                        <Input
+                            label="Potwierdź hasło"
+                            type="password"
+                            name="confirmPassword"
+                            value={formData.confirmPassword}
+                            onChange={handleChange}
+                            placeholder="Powtórz nowe hasło"
+                            autoComplete="new-password"
+                        />
                     )}
 
                     {/* Submit */}
-                    <button
+                    <Button
                         type="submit"
                         disabled={loading}
-                        className="btn-primary w-full flex items-center justify-center gap-2"
+                        variant="primary"
+                        className="w-full"
                     >
                         {loading ? (
                             <>
@@ -245,18 +238,18 @@ function ProfilePage() {
                                 Zapisz zmiany
                             </>
                         )}
-                    </button>
+                    </Button>
                 </form>
-            </div>
+            </Card>
 
-            {/* Dodatkowe info */}
-            <div className="mt-6 bg-gray-800 rounded-lg p-4 border border-gray-700">
+            {/* Account Info */}
+            <Card className="mt-6 p-4">
                 <h3 className="font-semibold mb-2">Informacje o koncie</h3>
                 <div className="text-sm text-gray-400 space-y-1">
                     <p>Typ konta: {user.is_admin ? "Administrator" : "Użytkownik"}</p>
                     <p>Status: {user.is_active ? "Aktywny" : "Nieaktywny"}</p>
                 </div>
-            </div>
+            </Card>
         </div>
     );
 }

@@ -1,4 +1,5 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { Button } from "./StyledComponents";
 
 function Pagination({ currentPage, totalPages, onPageChange }) {
   const pages = [];
@@ -17,38 +18,40 @@ function Pagination({ currentPage, totalPages, onPageChange }) {
 
   return (
     <div className="flex items-center justify-center gap-2 mt-8">
-      <button
+      <Button
         onClick={() => onPageChange(currentPage - 1)}
         disabled={currentPage === 1}
-        className="p-2 rounded bg-gray-800 hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed border border-gray-700"
+        variant="secondary"
+        size="sm"
+        className="p-2"
       >
         <ChevronLeft size={20} />
-      </button>
+      </Button>
 
       {startPage > 1 && (
         <>
-          <button
+          <Button
             onClick={() => onPageChange(1)}
-            className="px-4 py-2 rounded bg-gray-800 hover:bg-gray-700 border border-gray-700"
+            variant="secondary"
+            size="sm"
+            className="px-4 py-2"
           >
             1
-          </button>
+          </Button>
           {startPage > 2 && <span className="text-gray-500">...</span>}
         </>
       )}
 
       {pages.map((page) => (
-        <button
+        <Button
           key={page}
           onClick={() => onPageChange(page)}
-          className={`px-4 py-2 rounded border ${
-            page === currentPage
-              ? "bg-blue-600 border-blue-600 text-white"
-              : "bg-gray-800 border-gray-700 hover:bg-gray-700"
-          }`}
+          variant={page === currentPage ? "primary" : "secondary"}
+          size="sm"
+          className="px-4 py-2"
         >
           {page}
-        </button>
+        </Button>
       ))}
 
       {endPage < totalPages && (
@@ -56,22 +59,26 @@ function Pagination({ currentPage, totalPages, onPageChange }) {
           {endPage < totalPages - 1 && (
             <span className="text-gray-500">...</span>
           )}
-          <button
+          <Button
             onClick={() => onPageChange(totalPages)}
-            className="px-4 py-2 rounded bg-gray-800 hover:bg-gray-700 border border-gray-700"
+            variant="secondary"
+            size="sm"
+            className="px-4 py-2"
           >
             {totalPages}
-          </button>
+          </Button>
         </>
       )}
 
-      <button
+      <Button
         onClick={() => onPageChange(currentPage + 1)}
         disabled={currentPage === totalPages}
-        className="p-2 rounded bg-gray-800 hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed border border-gray-700"
+        variant="secondary"
+        size="sm"
+        className="p-2"
       >
         <ChevronRight size={20} />
-      </button>
+      </Button>
     </div>
   );
 }

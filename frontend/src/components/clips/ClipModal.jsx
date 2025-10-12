@@ -4,6 +4,7 @@ import api from "../../services/api";
 import AwardSection from "./AwardSection";
 import CommentSection from "../comments/CommentSection";
 import { getDownloadUrl, getStreamUrl } from "../../utils/urlHelper";
+import { Button, Badge } from "../ui/StyledComponents";
 
 function ClipModal({ clip, onClose, onClipUpdate }) {
   const [clipDetails, setClipDetails] = useState(null);
@@ -24,7 +25,6 @@ function ClipModal({ clip, onClose, onClipUpdate }) {
   useEffect(() => {
     fetchClipDetails();
 
-    // ESC key handler
     const handleEsc = (e) => {
       if (e.key === "Escape") onClose();
     };
@@ -33,14 +33,12 @@ function ClipModal({ clip, onClose, onClipUpdate }) {
   }, [fetchClipDetails, onClose]);
 
   const handleDownload = () => {
-    // getDownloadUrl już dodaje token automatycznie
     const downloadUrl = getDownloadUrl(clip.id);
     console.log("Downloading from:", downloadUrl);
     window.open(downloadUrl, "_blank");
   };
 
   const handleAwardsChange = (newAwards) => {
-    // Update clipDetails with new awards
     if (clipDetails) {
       setClipDetails({
         ...clipDetails,
@@ -48,7 +46,6 @@ function ClipModal({ clip, onClose, onClipUpdate }) {
       });
     }
 
-    // Powiadom parent o zmianie
     if (onClipUpdate) {
       onClipUpdate(clip.id);
     }
@@ -70,7 +67,6 @@ function ClipModal({ clip, onClose, onClipUpdate }) {
     return `${mins}:${String(secs).padStart(2, "0")}`;
   };
 
-  // Pobierz URL do media
   const mediaUrl =
     clip.clip_type === "video"
       ? getStreamUrl(clip.id)
@@ -78,19 +74,19 @@ function ClipModal({ clip, onClose, onClipUpdate }) {
 
   return (
     <div
-      className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4"
+      className="modal-backdrop animate-fade-in"
       onClick={onClose}
     >
       <div
-        className="bg-gray-800 rounded-lg max-w-6xl w-full max-h-[90vh] overflow-y-auto border border-gray-700"
+        className="modal-container max-w-6xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-gray-700">
+        <div className="flex items-center justify-between p-6 border-b border-dark-700">
           <h2 className="text-xl font-bold truncate flex-1">{clip.filename}</h2>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-gray-700 rounded transition"
+            className="p-2 hover:bg-dark-700 rounded-button transition-colors"
             title="Zamknij (ESC)"
           >
             <X size={24} />
@@ -107,7 +103,7 @@ function ClipModal({ clip, onClose, onClipUpdate }) {
                   ref={videoRef}
                   controls
                   autoPlay
-                  className="w-full rounded-lg bg-black"
+                  className="w-full rounded-card bg-black"
                   src={mediaUrl}
                   onError={(e) => {
                     console.error("Video load error:", e);
@@ -120,7 +116,7 @@ function ClipModal({ clip, onClose, onClipUpdate }) {
                 <img
                   src={mediaUrl}
                   alt={clip.filename}
-                  className="w-full rounded-lg"
+                  className="w-full rounded-card"
                   onError={(e) => {
                     console.error("Image load error:", e);
                     console.error("Attempted URL:", mediaUrl);
@@ -163,16 +159,17 @@ function ClipModal({ clip, onClose, onClipUpdate }) {
               </div>
 
               {/* Download button */}
-              <button
+              <Button
                 onClick={handleDownload}
-                className="mt-4 w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors flex items-center justify-center gap-2"
+                variant="primary"
+                className="mt-4 w-full"
               >
                 <Download size={20} />
                 Pobierz ({clip.file_size_mb.toFixed(1)} MB)
-              </button>
+              </Button>
 
               {/* Comments Section */}
-              <div className="mt-8 border-t border-gray-700 pt-6">
+              <div className="mt-8 border-t border-dark-700 pt-6">
                 {!loading && (
                   <CommentSection
                     clipId={clip.id}
@@ -190,10 +187,10 @@ function ClipModal({ clip, onClose, onClipUpdate }) {
                 <AwardSection
                   clipId={clip.id}
                   initialAwards={clipDetails.awards}
-                  onAwardsChange={handleAwardsChange} // To już jest
+                  onAwardsChange={handleAwardsChange}
                 />
               ) : (
-                <div className="text-red-400">
+                <div className="text-danger">
                   Nie udało się załadować nagród
                 </div>
               )}

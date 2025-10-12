@@ -1,4 +1,5 @@
 import { SlidersHorizontal, ArrowUpDown } from "lucide-react";
+import { Card, Select } from "./StyledComponents";
 
 function SortFilter({
   sortBy,
@@ -7,27 +8,36 @@ function SortFilter({
   onSortChange,
   onFilterChange,
 }) {
+  const sortOptions = [
+    { value: "created_at", label: "Data dodania" },
+    { value: "filename", label: "Nazwa" },
+    { value: "file_size", label: "Rozmiar" },
+    { value: "duration", label: "Długość" },
+  ];
+
+  const filterOptions = [
+    { value: "", label: "Wszystkie" },
+    { value: "video", label: "Video" },
+    { value: "screenshot", label: "Screenshot" },
+  ];
+
   return (
-    <div className="flex flex-wrap items-center gap-4 mb-6 p-4 bg-gray-800 rounded-lg border border-gray-700">
+    <Card className="flex flex-wrap items-center gap-4 mb-6 p-4">
       {/* Sort */}
       <div className="flex items-center gap-2">
         <ArrowUpDown size={20} className="text-gray-400" />
-        <select
+        <Select
           value={sortBy}
           onChange={(e) => onSortChange(e.target.value, sortOrder)}
-          className="bg-gray-700 border border-gray-600 text-white px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-        >
-          <option value="created_at">Data dodania</option>
-          <option value="filename">Nazwa</option>
-          <option value="file_size">Rozmiar</option>
-          <option value="duration">Długość</option>
-        </select>
+          options={sortOptions}
+          className="min-w-[160px]"
+        />
 
         <button
           onClick={() =>
             onSortChange(sortBy, sortOrder === "asc" ? "desc" : "asc")
           }
-          className="p-2 bg-gray-700 hover:bg-gray-600 rounded border border-gray-600"
+          className="p-2 bg-dark-700 hover:bg-dark-600 rounded-button border border-dark-600 transition-colors"
           title={sortOrder === "asc" ? "Rosnąco" : "Malejąco"}
         >
           {sortOrder === "asc" ? "↑" : "↓"}
@@ -37,17 +47,14 @@ function SortFilter({
       {/* Filter */}
       <div className="flex items-center gap-2">
         <SlidersHorizontal size={20} className="text-gray-400" />
-        <select
+        <Select
           value={clipType}
           onChange={(e) => onFilterChange(e.target.value)}
-          className="bg-gray-700 border border-gray-600 text-white px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-        >
-          <option value="">Wszystkie</option>
-          <option value="video">Video</option>
-          <option value="screenshot">Screenshot</option>
-        </select>
+          options={filterOptions}
+          className="min-w-[160px]"
+        />
       </div>
-    </div>
+    </Card>
   );
 }
 
