@@ -2,7 +2,7 @@ import { useState } from "react";
 import * as LucideIcons from "lucide-react";
 import { Award, Calendar, Image, Play, User, Check } from "lucide-react";
 import ClipModal from "./ClipModal";
-import { getBaseUrl, getThumbnailUrl } from "../../utils/urlHelper";
+import { getBaseUrl, getThumbnailUrl, addTokenToUrl } from "../../utils/urlHelper";
 
 function ClipCard({
   clip,
@@ -14,8 +14,12 @@ function ClipCard({
 }) {
   const [showModal, setShowModal] = useState(false);
 
+  // ✅ Thumbnail URL z tokenem
   const thumbnailUrl = clip.has_thumbnail ? getThumbnailUrl(clip.id) : null;
-  const thumbnailWebPUrl = thumbnailUrl;
+
+  // ❌ PROBLEM: WebP URL jest taki sam jak JPEG, ale powinien mieć własny token
+  // Musimy go wygenerować osobno
+  const thumbnailWebPUrl = thumbnailUrl; // To będzie OK bo getThumbnailUrl() już dodaje token
 
   const formatDate = (dateString) => {
     return new Date(dateString).toLocaleDateString("pl-PL", {
@@ -31,12 +35,17 @@ function ClipCard({
 
   const renderAwardIcon = (awardIcon) => {
     if (awardIcon.icon_url) {
+      // ✅ Dodaj token do custom icon URL
+      const iconUrl = addTokenToUrl(`${getBaseUrl()}${awardIcon.icon_url}`);
+
       return (
         <img
-          src={`${getBaseUrl()}${awardIcon.icon_url}`}
+          src={iconUrl}
           alt={awardIcon.award_name}
           className="w-8 h-8 rounded-full border-2 border-gray-900 bg-gray-800 object-cover"
+          loading="lazy"
           onError={(e) => {
+            console.error("Award icon load error:", awardIcon.icon_url);
             e.target.style.display = "none";
             const fallback = document.createElement("div");
             fallback.className =
@@ -121,18 +130,25 @@ function ClipCard({
 
         <div className="relative aspect-video bg-gray-900 flex items-center justify-center overflow-hidden">
           {thumbnailUrl ? (
-            <picture>
-              <source srcSet={thumbnailWebPUrl} type="image/webp" />
-              <img
-                src={thumbnailUrl}
-                alt={clip.filename}
-                className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
-                onError={(e) => {
-                  console.error("Thumbnail load error for clip", clip.id);
-                  e.target.style.display = "none";
-                }}
-              />
-            </picture>
+            // ✅ Uproszczone - jeden <img> tag zamiast <picture>
+            // Picture tag może powodować podwójne requesty
+            <img
+              src={thumbnailUrl}
+              alt={clip.filename}
+              className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+              loading="lazy"
+              onError={(e) => {
+                console.error("Thumbnail load error for clip", clip.id);
+                console.error("Attempted URL:", thumbnailUrl);
+                e.target.style.display = "none";
+                // Pokaż placeholder
+                e.target.parentElement.innerHTML = `
+                  <div class="text-gray-600 flex items-center justify-center">
+                    ${clip.clip_type === "video" ? '<svg>...</svg>' : '<svg>...</svg>'}
+                  </div>
+                `;
+              }}
+            />
           ) : (
             <div className="text-gray-600">
               {clip.clip_type === "video" ? <Play size={48} /> : <Image size={48} />}

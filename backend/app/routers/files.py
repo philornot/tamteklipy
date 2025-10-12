@@ -30,6 +30,9 @@ from app.services.file_processor import (
     save_file_to_disk, generate_thumbnails_sync,
     create_clip_record, invalidate_clips_cache
 )
+from app.services.background_tasks import process_thumbnail_background
+from fastapi import APIRouter, UploadFile, File, Depends, BackgroundTasks
+from sqlalchemy.orm import Session
 from app.services.file_validator import (
     validate_file_type, validate_file_size,
     generate_unique_filename, check_disk_space
@@ -49,14 +52,25 @@ logger = logging.getLogger(__name__)
 
 @router.post("/upload")
 async def upload_file(
+        background_tasks: BackgroundTasks,  # <-- DODANE
         file: UploadFile = File(...),
         db: Session = Depends(get_db),
         current_user: User = Depends(get_current_user)
 ):
     """
-    Upload pliku
+    Upload pliku - UPROSZCZONA WERSJA
+
+    Zwraca natychmiast po zapisaniu pliku.
+    Thumbnail generuje się w tle.
+
+    Flow:
+    1. Waliduj plik ⚡
+    2. Zapisz na dysku ⚡
+    3. Zapisz do bazy ⚡
+    4. Zwróć response ✅ (użytkownik widzi sukces!)
+    5. Generuj thumbnail w tle 🎨 (nie blokuje)
     """
-    logger.info(f"Upload from {current_user.username}: {file.filename} ({file.content_type})")
+    logger.info(f"📤 Upload from {current_user.username}: {file.filename}")
 
     try:
         # 1. Waliduj typ
@@ -77,15 +91,11 @@ async def upload_file(
         storage_dir = get_storage_directory(clip_type)
         check_disk_space(storage_dir, file_size)
 
-        # 6. Zapisz plik
+        # 6. Zapisz plik na dysku
         file_path = await save_file_to_disk(file_content, unique_filename, clip_type)
+        logger.info(f"💾 File saved: {file_path}")
 
-        # 7. Generuj thumbnail
-        thumbnail_path, thumbnail_webp_path, metadata = generate_thumbnails_sync(
-            file_path, clip_type
-        )
-
-        # 8. Zapisz do bazy
+        # 7. Zapisz do bazy BEZ thumbnails (jeszcze ich nie ma)
         new_clip = await create_clip_record(
             db=db,
             filename=file.filename,
@@ -93,40 +103,44 @@ async def upload_file(
             file_size=file_size,
             clip_type=clip_type,
             uploader_id=current_user.id,
-            thumbnail_path=thumbnail_path,
-            thumbnail_webp_path=thumbnail_webp_path,
-            metadata=metadata
+            thumbnail_path=None,  # Będzie uzupełnione w tle
+            thumbnail_webp_path=None,
+            metadata=None  # Będzie uzupełnione w tle
         )
+        logger.info(f"✅ Clip created: ID={new_clip.id}")
+
+        # 8. Zakolejkuj thumbnail w TLE (nie czekamy!)
+        background_tasks.add_task(
+            process_thumbnail_background,
+            clip_id=new_clip.id,
+            file_path=str(file_path),
+            clip_type=clip_type
+        )
+        logger.info(f"🎨 Thumbnail queued in background for clip {new_clip.id}")
 
         # 9. Invaliduj cache
         await invalidate_clips_cache()
 
-        # 10. Zwróć response
-        response = {
+        # 10. Zwróć response NATYCHMIAST
+        return {
             "message": "Plik został przesłany pomyślnie",
             "clip_id": new_clip.id,
             "filename": file.filename,
             "file_size_mb": round(file_size / (1024 * 1024), 2),
             "clip_type": clip_type.value,
             "uploader": current_user.username,
-            "created_at": new_clip.created_at.isoformat()
+            "created_at": new_clip.created_at.isoformat(),
+
+            # Status thumbnails
+            "thumbnail_status": "processing",  # 🎨 W trakcie generowania
+            "thumbnail_ready": False,
+            "processing_info": "Miniaturka jest generowana w tle"
         }
-
-        if thumbnail_path:
-            response["thumbnail_generated"] = True
-            response["webp_generated"] = thumbnail_webp_path is not None
-
-        if metadata:
-            response["duration"] = metadata.get("duration")
-            response["resolution"] = f"{metadata.get('width')}x{metadata.get('height')}"
-
-        return response
 
     except (ValidationError, FileUploadError, StorageError):
         raise
     except Exception as e:
-        # Nieoczekiwany błąd
-        logger.error(f"Unexpected upload error: {e}", exc_info=True)
+        logger.error(f"❌ Unexpected upload error: {e}", exc_info=True)
         raise FileUploadError(
             message="Nieoczekiwany błąd podczas uploadu",
             filename=file.filename,
@@ -836,6 +850,60 @@ async def get_thumbnail(
         media_type="image/jpeg",
         headers={"Cache-Control": "public, max-age=3600"}
     )
+
+
+@router.get("/clips/{clip_id}/thumbnail-status")
+async def get_thumbnail_status(
+        clip_id: int,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user)
+):
+    """
+    Sprawdź status generowania thumbnails
+
+    GET /api/files/clips/{clip_id}/thumbnail-status
+
+    Użycie na frontendzie:
+    - Pokazuj spinner podczas processing
+    - Poll co 1-2 sekundy
+    - Gdy ready=true, odśwież thumbnail
+    """
+    clip = db.query(Clip).filter(
+        Clip.id == clip_id,
+        Clip.is_deleted == False
+    ).first()
+
+    if not clip:
+        raise ValidationError(message="Klip nie istnieje", field="clip_id")
+
+    # Sprawdź czy thumbnail jest gotowy
+    has_thumbnail = clip.thumbnail_path is not None
+    has_webp = clip.thumbnail_webp_path is not None
+    has_metadata = clip.duration is not None or clip.width is not None
+
+    if has_thumbnail:
+        status = "ready"
+        message = "Miniaturka jest gotowa"
+    elif has_metadata:
+        status = "processing"
+        message = "Generowanie miniaturki w trakcie..."
+    else:
+        status = "pending"
+        message = "Oczekuje na przetworzenie"
+
+    return {
+        "clip_id": clip_id,
+        "status": status,
+        "message": message,
+        "thumbnail_ready": has_thumbnail,
+        "thumbnail_url": f"/api/files/thumbnails/{clip_id}" if has_thumbnail else None,
+        "has_webp": has_webp,
+        "metadata": {
+            "duration": clip.duration,
+            "width": clip.width,
+            "height": clip.height
+        } if has_metadata else None
+    }
 
 
 @router.get("/stream/{clip_id}")

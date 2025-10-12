@@ -1,17 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useLocation } from "react-router-dom";
 import api from "../services/api";
 import ClipGrid from "../components/clips/ClipGrid";
 import FloatingToolbar from "../components/clips/FloatingToolbar";
 import SortFilter from "../components/ui/SortFilter";
-import { AlertCircle, CheckSquare, Loader, Sparkles } from "lucide-react";
+import { AlertCircle, CheckSquare, Sparkles } from "lucide-react";
 import usePageTitle from "../hooks/usePageTitle.js";
 import { useBulkSelection } from "../hooks/useBulkSelection.js";
-import { cn } from "../utils/styleUtils";
 import { Button, SectionHeader, Spinner } from "../components/ui/StyledComponents";
 
 function DashboardPage() {
   usePageTitle("Dashboard");
+  const location = useLocation();
+
   const [clips, setClips] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -23,6 +24,7 @@ function DashboardPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const observerTarget = useRef(null);
   const headerRef = useRef(null);
+  const refreshTimeoutRef = useRef(null);
 
   const {
     selectedIds,
@@ -37,6 +39,7 @@ function DashboardPage() {
   const sortOrder = searchParams.get("sort_order") || "desc";
   const clipType = searchParams.get("clip_type") || "";
 
+  // Mouse tracking dla gradient effect
   useEffect(() => {
     const handleMouseMove = (e) => {
       if (headerRef.current) {
@@ -59,6 +62,7 @@ function DashboardPage() {
     };
   }, []);
 
+  // ESC key handler
   useEffect(() => {
     const handleEsc = (e) => {
       if (e.key === "Escape" && hasSelection) {
@@ -70,12 +74,14 @@ function DashboardPage() {
     return () => window.removeEventListener("keydown", handleEsc);
   }, [hasSelection, clearSelection]);
 
+  // Calculate dynamic gradient
   const calculateGradient = () => {
     const angle =
       Math.atan2(mousePosition.y - 50, mousePosition.x - 50) * (180 / Math.PI);
     return `linear-gradient(${angle}deg, #111827, rgba(30, 27, 75, 0.4), rgba(112, 26, 117, 0.3))`;
   };
 
+  // Fetch clips function
   const fetchClips = useCallback(
     async (pageNum, append = false) => {
       if (append) {
@@ -106,7 +112,7 @@ function DashboardPage() {
         }
 
         setHasMore(response.data.page < response.data.pages);
-        console.log("✓ Clips fetched, thumbnails preloaded via HTTP/2 Server Push");
+        console.log("✅ Clips fetched, thumbnails preloaded via HTTP/2 Server Push");
       } catch (err) {
         console.error("Failed to fetch clips:", err);
         setError("Nie udało się załadować klipów");
@@ -118,14 +124,53 @@ function DashboardPage() {
     [sortBy, sortOrder, clipType]
   );
 
+  // AUTO-REFRESH po powrocie z upload page
+  useEffect(() => {
+    const fromUpload = location.state?.fromUpload;
+
+    if (fromUpload) {
+      console.log("🔄 Returned from upload, scheduling refreshes...");
+
+      // Odśwież natychmiast
+      fetchClips(1, false);
+
+      // Harmonogram refreshy (thumbnails mogą się jeszcze generować)
+      refreshTimeoutRef.current = setTimeout(() => {
+        console.log("🔄 Refresh 1/3 (2s)");
+        fetchClips(1, false);
+
+        refreshTimeoutRef.current = setTimeout(() => {
+          console.log("🔄 Refresh 2/3 (5s)");
+          fetchClips(1, false);
+
+          refreshTimeoutRef.current = setTimeout(() => {
+            console.log("🔄 Refresh 3/3 (10s - final)");
+            fetchClips(1, false);
+          }, 5000);
+        }, 3000);
+      }, 2000);
+
+      // Wyczyść state
+      window.history.replaceState({}, document.title);
+    }
+
+    return () => {
+      if (refreshTimeoutRef.current) {
+        clearTimeout(refreshTimeoutRef.current);
+      }
+    };
+  }, [location.state, fetchClips]);
+
+  // Initial load i zmiana sortowania/filtrów
   useEffect(() => {
     setPage(1);
     setClips([]);
     setHasMore(true);
     clearSelection();
     fetchClips(1, false);
-  }, [sortBy, sortOrder, clipType]);
+  }, [sortBy, sortOrder, clipType, fetchClips, clearSelection]);
 
+  // Infinite scroll observer
   useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {
@@ -211,21 +256,23 @@ function DashboardPage() {
     });
   }, []);
 
+  // Loading state
   if (loading && clips.length === 0) {
     return (
       <div className="container mx-auto px-4 py-8 flex items-center justify-center min-h-[60vh]">
         <div className="relative">
           <Spinner size="xl" color="primary" />
-          <div className="absolute inset-0 blur-xl bg-primary-500/20 animate-pulse" />
+          <div className="absolute inset-0 blur-xl bg-purple-500/20 animate-pulse" />
         </div>
       </div>
     );
   }
 
+  // Error state
   if (error && clips.length === 0) {
     return (
       <div className="container mx-auto px-4 py-8">
-        <div className="bg-danger/50 border border-danger text-red-200 px-6 py-4 rounded-lg flex items-center gap-3">
+        <div className="bg-red-500/10 border border-red-500 text-red-200 px-6 py-4 rounded-card flex items-center gap-3">
           <AlertCircle size={24} />
           <span>{error}</span>
         </div>
@@ -235,6 +282,7 @@ function DashboardPage() {
 
   return (
     <div className="container mx-auto px-4 py-8 min-h-screen">
+      {/* Header z dynamic gradient */}
       <SectionHeader
         ref={headerRef}
         title="Dashboard"
@@ -242,7 +290,7 @@ function DashboardPage() {
           <>
             {clips.length} {clips.length === 1 ? "klip" : "klipów"} załadowanych
             {hasSelection && (
-              <span className="text-primary-400 ml-2">
+              <span className="text-purple-400 ml-2">
                 • {selectedCount} zaznaczonych
               </span>
             )}
@@ -267,6 +315,7 @@ function DashboardPage() {
         style={{ background: calculateGradient() }}
       />
 
+      {/* Sort & Filter */}
       <SortFilter
         sortBy={sortBy}
         sortOrder={sortOrder}
@@ -275,6 +324,7 @@ function DashboardPage() {
         onFilterChange={handleFilterChange}
       />
 
+      {/* Clips Grid */}
       <ClipGrid
         clips={clips}
         loading={false}
@@ -284,6 +334,7 @@ function DashboardPage() {
         onClipUpdate={handleClipUpdate}
       />
 
+      {/* Floating Toolbar (bulk actions) */}
       {hasSelection && (
         <FloatingToolbar
           selectedCount={selectedCount}
@@ -293,12 +344,13 @@ function DashboardPage() {
         />
       )}
 
+      {/* Infinite Scroll Observer Target */}
       <div ref={observerTarget} className="py-12 flex items-center justify-center">
         {loadingMore && (
-          <div className="flex items-center gap-3 text-primary-400 bg-dark-800/50 px-6 py-3 rounded-xl border border-primary-500/20">
+          <div className="flex items-center gap-3 text-purple-400 bg-gray-800/50 px-6 py-3 rounded-xl border border-purple-500/20 backdrop-blur-sm">
             <div className="relative">
               <Spinner size="md" color="primary" />
-              <div className="absolute inset-0 blur-md bg-primary-500/30 animate-pulse" />
+              <div className="absolute inset-0 blur-md bg-purple-500/30 animate-pulse" />
             </div>
             <span className="font-medium">Ładowanie kolejnych klipów...</span>
           </div>
@@ -309,13 +361,14 @@ function DashboardPage() {
             <p className="text-gray-400 text-sm font-medium">
               Wszystkie klipy zostały załadowane
             </p>
-            <div className="relative w-32 h-1 mx-auto rounded-full overflow-hidden bg-dark-800">
-              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-primary-500 to-transparent animate-pulse" />
+            <div className="relative w-32 h-1 mx-auto rounded-full overflow-hidden bg-gray-800">
+              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-purple-500 to-transparent animate-pulse" />
             </div>
           </div>
         )}
       </div>
 
+      {/* Manual Load More Button */}
       {!loadingMore && hasMore && clips.length > 0 && (
         <div className="flex justify-center pb-12">
           <Button
@@ -332,8 +385,33 @@ function DashboardPage() {
             <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 -translate-x-full group-hover:translate-x-full group-hover:duration-1000" />
             <span className="relative z-10 flex items-center gap-3">
               Załaduj więcej
-              <Sparkles size={18} className="text-primary-400 group-hover:text-accent-300 group-hover:animate-pulse transition-colors duration-300" />
+              <Sparkles size={18} className="text-purple-400 group-hover:text-fuchsia-300 group-hover:animate-pulse transition-colors duration-300" />
             </span>
+          </Button>
+        </div>
+      )}
+
+      {/* Empty State */}
+      {!loading && clips.length === 0 && (
+        <div className="text-center py-20">
+          <div className="relative inline-block mb-6">
+            <div className="absolute inset-0 blur-2xl bg-purple-500/20 animate-pulse" />
+            <Sparkles size={64} className="relative text-purple-400" />
+          </div>
+          <h3 className="text-2xl font-bold text-gray-300 mb-2">
+            Brak klipów
+          </h3>
+          <p className="text-gray-400 mb-6">
+            {clipType || sortBy !== "created_at"
+              ? "Spróbuj zmienić filtry"
+              : "Rozpocznij od przesłania pierwszego pliku"}
+          </p>
+          <Button
+            variant="primary"
+            size="lg"
+            onClick={() => window.location.href = "/upload"}
+          >
+            Prześlij pierwszy klip
           </Button>
         </div>
       )}

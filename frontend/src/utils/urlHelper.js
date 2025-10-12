@@ -39,7 +39,8 @@ const getDownloadUrl = (clipId) => {
 };
 
 const getAwardIconUrl = (iconPath) => {
-  return getApiUrl(iconPath);
+  const url = getApiUrl(iconPath);
+  return addTokenToUrl(url);
 };
 
 // Named export dla api.js
@@ -52,5 +53,6 @@ export {
   getThumbnailUrl,
   getStreamUrl,
   getDownloadUrl,
-  getAwardIconUrl
+  getAwardIconUrl,
+  addTokenToUrl,
 };
