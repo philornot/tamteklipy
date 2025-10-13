@@ -8,6 +8,8 @@ import {
   CheckCircle,
   X,
   AlertCircle,
+  HardDrive,
+  Wifi,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import api from "../services/api";
@@ -23,13 +25,88 @@ function UploadPage() {
   usePageTitle("Upload");
   const navigate = useNavigate();
 
-  const [files, setFiles] = useState([]); // Array z plikami i ich statusami
+  const [files, setFiles] = useState([]);
   const [dragActive, setDragActive] = useState(false);
   const uploadingRef = useRef(false);
 
   const formatFileSize = (bytes) => {
     const mb = bytes / (1024 * 1024);
     return mb < 1 ? `${(bytes / 1024).toFixed(0)} KB` : `${mb.toFixed(1)} MB`;
+  };
+
+  // ============================================
+  // NOWA FUNKCJA: Parse error response
+  // ============================================
+  const parseErrorMessage = (error) => {
+    if (!error.response) {
+      return {
+        title: "Błąd połączenia",
+        message: "Nie można połączyć się z serwerem. Sprawdź połączenie internetowe.",
+        icon: <Wifi size={16} className="text-red-400" />,
+        technical: error.message,
+      };
+    }
+
+    const status = error.response.status;
+    const data = error.response.data;
+
+    // Storage errors (500) - np. brak dostępu do pendrive'a
+    if (status === 500 && data?.details?.path) {
+      return {
+        title: "Błąd dostępu do storage",
+        message: data.message || "Nie można zapisać pliku na dysku",
+        icon: <HardDrive size={16} className="text-red-400" />,
+        technical: `Path: ${data.details.path}`,
+        hints: [
+          "Sprawdź czy pendrive jest podłączony",
+          "Sprawdź uprawnienia do zapisu w katalogu",
+          "Skontaktuj się z administratorem",
+        ],
+      };
+    }
+
+    // Permission denied (403/401)
+    if (status === 403 || status === 401) {
+      return {
+        title: "Brak uprawnień",
+        message: data?.message || "Nie masz uprawnień do przesyłania plików",
+        icon: <AlertCircle size={16} className="text-yellow-400" />,
+        technical: `Status: ${status}`,
+      };
+    }
+
+    // Validation error (422/400) - np. zły typ pliku
+    if (status === 422 || status === 400) {
+      return {
+        title: "Nieprawidłowy plik",
+        message: data?.message || "Plik nie spełnia wymagań",
+        icon: <AlertCircle size={16} className="text-yellow-400" />,
+        technical: data?.details
+          ? JSON.stringify(data.details, null, 2)
+          : undefined,
+      };
+    }
+
+    // Disk full (507)
+    if (status === 507 || (data?.message && data.message.includes("miejsca"))) {
+      return {
+        title: "Brak miejsca na dysku",
+        message: data?.message || "Nie ma wystarczająco miejsca na serwerze",
+        icon: <HardDrive size={16} className="text-red-400" />,
+        technical: data?.details
+          ? `Free: ${data.details.free_mb}MB, Required: ${data.details.required_mb}MB`
+          : undefined,
+        hints: ["Usuń stare pliki", "Sprawdź dostępne miejsce na pendrive"],
+      };
+    }
+
+    // Generic error
+    return {
+      title: "Błąd uploadu",
+      message: data?.message || data?.detail || "Nieznany błąd serwera",
+      icon: <AlertCircle size={16} className="text-red-400" />,
+      technical: `Status: ${status}`,
+    };
   };
 
   const validateAndAddFiles = (selectedFiles) => {
@@ -55,10 +132,11 @@ function UploadPage() {
       validFiles.push({
         file,
         preview: URL.createObjectURL(file),
-        status: "pending", // pending, uploading, processing, success, error
+        status: "pending",
         progress: 0,
         clipId: null,
         error: null,
+        errorDetails: null, // ← NOWE: szczegóły błędu
         isVideo: isVideo,
       });
     }
@@ -101,12 +179,19 @@ function UploadPage() {
     });
   };
 
+  // ============================================
+  // POPRAWIONY UPLOAD Z TIMEOUT I LEPSZYM ERROR HANDLING
+  // ============================================
   const uploadSingleFile = async (fileObj, index) => {
     const formData = new FormData();
     formData.append("file", fileObj.file);
 
+    // Timeout na upload (5 minut dla dużych plików)
+    const UPLOAD_TIMEOUT = 5 * 60 * 1000;
+    const abortController = new AbortController();
+    const timeoutId = setTimeout(() => abortController.abort(), UPLOAD_TIMEOUT);
+
     try {
-      // Update status: uploading
       setFiles((prev) =>
         prev.map((f, i) =>
           i === index ? { ...f, status: "uploading", progress: 0 } : f
@@ -115,6 +200,7 @@ function UploadPage() {
 
       const response = await api.post("/files/upload", formData, {
         headers: { "Content-Type": "multipart/form-data" },
+        signal: abortController.signal,
         onUploadProgress: (e) => {
           if (e.total) {
             const progress = Math.round((e.loaded * 100) / e.total);
@@ -125,9 +211,9 @@ function UploadPage() {
         },
       });
 
+      clearTimeout(timeoutId);
       const clipId = response.data.clip_id;
 
-      // Update status: processing (czeka na thumbnail)
       setFiles((prev) =>
         prev.map((f, i) =>
           i === index
@@ -136,60 +222,70 @@ function UploadPage() {
         )
       );
 
-      // Poll thumbnail status
       await pollThumbnailStatus(clipId, index);
-
     } catch (error) {
-      const msg =
-        error.response?.data?.message ||
-        error.response?.data?.detail ||
-        "Błąd uploadu";
+      clearTimeout(timeoutId);
+
+      // Parse error z nowej funkcji
+      const errorInfo = parseErrorMessage(error);
+
+      console.error("Upload error:", {
+        file: fileObj.file.name,
+        error,
+        errorInfo,
+      });
 
       setFiles((prev) =>
         prev.map((f, i) =>
-          i === index ? { ...f, status: "error", error: msg } : f
+          i === index
+            ? {
+                ...f,
+                status: "error",
+                error: errorInfo.message,
+                errorDetails: errorInfo, // ← NOWE
+              }
+            : f
         )
+      );
+
+      // Toast z krótkim komunikatem
+      toast.error(
+        `${fileObj.file.name}: ${errorInfo.title}`,
+        { duration: 5000 }
       );
     }
   };
 
   const pollThumbnailStatus = async (clipId, index) => {
-    const maxAttempts = 30; // 30 * 2s = 60s max
+    const maxAttempts = 30;
     let attempts = 0;
 
     const poll = async () => {
       try {
-        const response = await api.get(`/files/clips/${clipId}/thumbnail-status`);
+        const response = await api.get(
+          `/files/clips/${clipId}/thumbnail-status`
+        );
 
         if (response.data.status === "ready") {
           setFiles((prev) =>
-            prev.map((f, i) =>
-              i === index ? { ...f, status: "success" } : f
-            )
+            prev.map((f, i) => (i === index ? { ...f, status: "success" } : f))
           );
           return true;
         }
 
         attempts++;
         if (attempts >= maxAttempts) {
-          // Timeout - ale to nie błąd, po prostu thumbnail trwa długo
           setFiles((prev) =>
-            prev.map((f, i) =>
-              i === index ? { ...f, status: "success" } : f
-            )
+            prev.map((f, i) => (i === index ? { ...f, status: "success" } : f))
           );
           return true;
         }
 
-        // Czekaj 2s i spróbuj ponownie
         await new Promise((resolve) => setTimeout(resolve, 2000));
         return poll();
       } catch (error) {
-        // Błąd podczas pollingu - ale plik jest już uploadowany
         setFiles((prev) =>
-          prev.map((f, i) =>
-            i === index ? { ...f, status: "success" } : f
-          )
+          prev.map((f, i) => (i === index ? { ...f, status: "success" } : f))
         );
         return true;
       }
@@ -213,16 +309,14 @@ function UploadPage() {
 
     toast.success(`Rozpoczynam upload ${pendingFiles.length} plików...`);
 
-    // Upload sekwencyjnie (jeden po drugim)
     for (const fileObj of pendingFiles) {
       await uploadSingleFile(fileObj, fileObj.index);
     }
 
     uploadingRef.current = false;
 
-    // Wszystkie pliki uploadowane
-    const allSuccess = files.every((f) =>
-      f.status === "success" || f.status === "pending"
+    const allSuccess = files.every(
+      (f) => f.status === "success" || f.status === "pending"
     );
 
     if (allSuccess) {
@@ -232,6 +326,20 @@ function UploadPage() {
       }, 1500);
     } else {
       toast("Niektóre pliki nie zostały przesłane", { icon: "⚠️" });
+    }
+  };
+
+  // Retry pojedynczego pliku
+  const retryFile = (index) => {
+    const fileObj = files[index];
+    if (fileObj.status === "error") {
+      setFiles((prev) =>
+        prev.map((f, i) =>
+          i === index
+            ? { ...f, status: "pending", error: null, errorDetails: null }
+            : f
+        )
+      );
     }
   };
 
@@ -353,7 +461,7 @@ function UploadPage() {
                     : ""
                 }`}
               >
-                <div className="flex items-center gap-4">
+                <div className="flex items-start gap-4">
                   {/* Preview */}
                   <div className="w-20 h-20 bg-dark-900 rounded overflow-hidden flex-shrink-0">
                     {fileObj.isVideo ? (
@@ -410,36 +518,95 @@ function UploadPage() {
                     )}
 
                     {fileObj.status === "processing" && (
-                      <Badge variant="default" size="sm" className="flex items-center gap-1 w-fit">
+                      <Badge
+                        variant="default"
+                        size="sm"
+                        className="flex items-center gap-1 w-fit"
+                      >
                         <Loader size={12} className="animate-spin" />
                         Generowanie miniaturki...
                       </Badge>
                     )}
 
                     {fileObj.status === "success" && (
-                      <Badge variant="success" size="sm" className="flex items-center gap-1 w-fit">
+                      <Badge
+                        variant="success"
+                        size="sm"
+                        className="flex items-center gap-1 w-fit"
+                      >
                         <CheckCircle size={12} />
                         Przesłano
                       </Badge>
                     )}
 
-                    {fileObj.status === "error" && (
-                      <Badge variant="danger" size="sm" className="flex items-center gap-1 w-fit">
-                        <AlertCircle size={12} />
-                        {fileObj.error || "Błąd"}
-                      </Badge>
+                    {/* ============================================
+                        NOWE: Rozbudowane wyświetlanie błędów
+                        ============================================ */}
+                    {fileObj.status === "error" && fileObj.errorDetails && (
+                      <div className="space-y-2 mt-2">
+                        {/* Główny komunikat */}
+                        <div className="flex items-start gap-2 p-3 bg-red-500/10 border border-red-500/30 rounded text-sm">
+                          {fileObj.errorDetails.icon}
+                          <div className="flex-1">
+                            <p className="font-medium text-red-400">
+                              {fileObj.errorDetails.title}
+                            </p>
+                            <p className="text-xs text-gray-400 mt-1">
+                              {fileObj.errorDetails.message}
+                            </p>
+
+                            {/* Technical details (collapse) */}
+                            {fileObj.errorDetails.technical && (
+                              <details className="mt-2">
+                                <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-400">
+                                  Szczegóły techniczne
+                                </summary>
+                                <pre className="text-xs text-gray-500 mt-1 p-2 bg-black/30 rounded overflow-x-auto">
+                                  {fileObj.errorDetails.technical}
+                                </pre>
+                              </details>
+                            )}
+
+                            {/* Hints */}
+                            {fileObj.errorDetails.hints && (
+                              <div className="mt-2 text-xs text-gray-500">
+                                <p className="font-medium mb-1">
+                                  Możliwe rozwiązania:
+                                </p>
+                                <ul className="list-disc list-inside space-y-0.5">
+                                  {fileObj.errorDetails.hints.map(
+                                    (hint, i) => (
+                                      <li key={i}>{hint}</li>
+                                    )
+                                  )}
+                                </ul>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Retry button */}
+                        <button
+                          onClick={() => retryFile(index)}
+                          className="text-xs text-primary-400 hover:text-primary-300 transition"
+                        >
+                          🔄 Spróbuj ponownie
+                        </button>
+                      </div>
                     )}
                   </div>
 
                   {/* Remove Button */}
-                  {!isUploading && fileObj.status === "pending" && (
-                    <button
-                      onClick={() => removeFile(index)}
-                      className="p-2 hover:bg-dark-700 rounded-button transition text-gray-400 hover:text-red-400"
-                    >
-                      <X size={18} />
-                    </button>
-                  )}
+                  {!isUploading &&
+                    (fileObj.status === "pending" ||
+                      fileObj.status === "error") && (
+                      <button
+                        onClick={() => removeFile(index)}
+                        className="p-2 hover:bg-dark-700 rounded-button transition text-gray-400 hover:text-red-400"
+                      >
+                        <X size={18} />
+                      </button>
+                    )}
                 </div>
               </Card>
             ))}
@@ -475,7 +642,9 @@ function UploadPage() {
           <li>• Wybierz wiele plików naraz (Ctrl+klik lub przeciągnij)</li>
           <li>• Pliki są wysyłane kolejno, jeden po drugim</li>
           <li>• Miniaturki generują się w tle (~10s każda)</li>
-          <li>• Automatyczne przekierowanie gdy wszystkie gotowe</li>
+          <li>• W przypadku błędu kliknij "Spróbuj ponownie"</li>
+          <li>• Jeśli widzisz błąd "Brak dostępu do storage" - spytaj Filipa czy na z pendrivem jest wszyskto ok
+          </li>
         </ul>
       </Card>
     </div>
