@@ -44,30 +44,86 @@ async def save_file_to_disk(
     Returns:
         Path: Ścieżka do zapisanego pliku
     """
+    import os
+    import tempfile
+
     storage_dir = get_storage_directory(clip_type)
 
     try:
         storage_dir.mkdir(parents=True, exist_ok=True)
+    except PermissionError as e:
+        logger.error(f"Permission denied creating directory: {storage_dir} - {e}")
+        raise StorageError(
+            message=f"Brak uprawnień do utworzenia katalogu. Sprawdź uprawnienia do: {storage_dir}",
+            path=str(storage_dir)
+        )
     except OSError as e:
         logger.error(f"Failed to create directory: {e}")
         raise StorageError(
-            message="Nie można utworzyć katalogu",
+            message=f"Nie można utworzyć katalogu: {e}",
+            path=str(storage_dir)
+        )
+
+    if storage_dir.exists() and not storage_dir.is_dir():
+        logger.error(f"Storage path exists and is not a directory: {storage_dir}")
+        raise StorageError(
+            message=f"Ścieżka istnieje i nie jest katalogiem: {storage_dir}",
             path=str(storage_dir)
         )
 
     file_path = storage_dir / unique_filename
+    tmp_path = None
+    moved = False
 
     try:
-        with open(file_path, "wb") as f:
-            f.write(file_content)
+        # Zapis do pliku tymczasowego w tym samym katalogu, a następnie atomic zastąpienie
+        with tempfile.NamedTemporaryFile(delete=False, dir=str(storage_dir)) as tmp:
+            tmp_path = Path(tmp.name)
+            try:
+                tmp.write(file_content)
+                tmp.flush()
+                os.fsync(tmp.fileno())
+            except PermissionError as e:
+                logger.error(f"Permission denied writing temporary file: {tmp_path} - {e}")
+                raise StorageError(
+                    message=f"Brak uprawnień do zapisu pliku tymczasowego: {tmp_path}",
+                    path=str(tmp_path)
+                )
+            except OSError as e:
+                logger.error(f"Failed to write temporary file: {e}")
+                raise StorageError(
+                    message=f"Nie można zapisać pliku tymczasowego: {e}",
+                    path=str(tmp_path)
+                )
+
+        # Atomowe przeniesienie na docelową nazwę
+        try:
+            os.replace(str(tmp_path), str(file_path))
+            moved = True
+        except PermissionError as e:
+            logger.error(f"Permission denied moving file to final destination: {file_path} - {e}")
+            raise StorageError(
+                message=f"Brak uprawnień do przeniesienia pliku do: {file_path}",
+                path=str(file_path)
+            )
+        except OSError as e:
+            logger.error(f"Failed to move temporary file to final destination: {e}")
+            raise StorageError(
+                message=f"Nie można przenieść pliku na docelową ścieżkę: {e}",
+                path=str(file_path)
+            )
+
         logger.info(f"File saved: {file_path}")
         return file_path
-    except OSError as e:
-        logger.error(f"Failed to write file: {e}")
-        raise StorageError(
-            message="Nie można zapisać pliku na dysku",
-            path=str(file_path)
-        )
+
+    finally:
+        # Cleanup pliku tymczasowego, jeżeli nie został przeniesiony
+        try:
+            if tmp_path and tmp_path.exists() and not moved:
+                tmp_path.unlink()
+        except OSError:
+            # Nie przerywamy działania, tylko logujemy
+            logger.debug(f"Failed to remove temporary file: {tmp_path}")
 
 
 def generate_thumbnails_sync(
