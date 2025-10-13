@@ -15,8 +15,10 @@ from app.core.database import SessionLocal
 from app.models.clip import Clip, ClipType
 from app.services.thumbnail_service import generate_thumbnail, generate_image_thumbnail
 from app.core.config import settings
+from app.core.logging_config import setup_logging
 
-logging.basicConfig(level=logging.INFO)
+# Spójna konfiguracja logowania
+setup_logging(log_level="INFO")
 logger = logging.getLogger(__name__)
 
 
@@ -84,17 +86,17 @@ def regenerate_all_thumbnails():
                     db.commit()
 
                     if webp_path:
-                        logger.info(f"✓ Clip {clip.id}: JPEG + WebP generated")
+                        logger.info(f"Clip {clip.id}: JPEG + WebP generated")
                     else:
-                        logger.info(f"✓ Clip {clip.id}: JPEG generated (WebP failed)")
+                        logger.info(f"Clip {clip.id}: JPEG generated (WebP failed)")
 
                     success_count += 1
                 else:
-                    logger.error(f"✗ Clip {clip.id}: Generation failed")
+                    logger.error(f"Clip {clip.id}: Generation failed")
                     error_count += 1
 
             except Exception as e:
-                logger.error(f"✗ Clip {clip.id}: Error - {e}")
+                logger.error(f"Clip {clip.id}: Error - {e}")
                 error_count += 1
                 db.rollback()
 
@@ -102,9 +104,9 @@ def regenerate_all_thumbnails():
         logger.info("REGENERATION SUMMARY")
         logger.info("=" * 50)
         logger.info(f"Total clips: {len(clips)}")
-        logger.info(f"✓ Success: {success_count}")
-        logger.info(f"⊘ Skipped: {skip_count}")
-        logger.info(f"✗ Errors: {error_count}")
+        logger.info(f"Success: {success_count}")
+        logger.info(f"Skipped: {skip_count}")
+        logger.info(f"Errors: {error_count}")
         logger.info("=" * 50)
 
     except Exception as e:
@@ -121,10 +123,10 @@ if __name__ == "__main__":
 
     # Pytaj o potwierdzenie w produkcji
     if settings.environment == "production":
-        response = input("\n⚠️  Running in PRODUCTION. Continue? (yes/no): ")
+        response = input("\nRunning in PRODUCTION. Continue? (yes/no): ")
         if response.lower() != "yes":
             logger.info("Aborted by user")
             sys.exit(0)
 
     regenerate_all_thumbnails()
-    logger.info("✓ Migration complete!")
+    logger.info("Migration complete!")

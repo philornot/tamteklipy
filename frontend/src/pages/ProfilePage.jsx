@@ -5,6 +5,7 @@ import api from "../services/api";
 import toast from "react-hot-toast";
 import usePageTitle from "../hooks/usePageTitle.js";
 import { Button, Card, Input } from "../components/ui/StyledComponents";
+import { logger } from "../utils/logger";
 
 function ProfilePage() {
     usePageTitle("Profil użytkownika");
@@ -66,7 +67,7 @@ function ProfilePage() {
             });
             setEmptyPassword(false);
         } catch (err) {
-            console.error("Failed to update profile:", err);
+            logger.error("Failed to update profile:", err);
             toast.error(err.response?.data?.message || "Nie udało się zaktualizować profilu");
         } finally {
             setLoading(false);
@@ -93,7 +94,7 @@ function ProfilePage() {
             });
             setEmptyPassword(false);
         } catch (err) {
-            console.error("Failed to set empty password:", err);
+            logger.error("Failed to set empty password:", err);
             toast.error(err.response?.data?.message || "Nie udało się ustawić pustego hasła");
         } finally {
             setLoading(false);

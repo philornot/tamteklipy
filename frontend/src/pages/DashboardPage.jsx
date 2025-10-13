@@ -8,6 +8,7 @@ import { AlertCircle, CheckSquare, Sparkles } from "lucide-react";
 import usePageTitle from "../hooks/usePageTitle.js";
 import { useBulkSelection } from "../hooks/useBulkSelection.js";
 import { Button, SectionHeader, Spinner } from "../components/ui/StyledComponents";
+import { logger } from "../utils/logger";
 
 function DashboardPage() {
   usePageTitle("Dashboard");
@@ -112,16 +113,16 @@ function DashboardPage() {
         }
 
         setHasMore(response.data.page < response.data.pages);
-        console.log("✅ Clips fetched, thumbnails preloaded via HTTP/2 Server Push");
+        logger.info("Clips fetched, thumbnails preloaded via HTTP/2 Server Push");
       } catch (err) {
-        console.error("Failed to fetch clips:", err);
+        logger.error("Failed to fetch clips:", err);
         setError("Nie udało się załadować klipów");
       } finally {
         setLoading(false);
         setLoadingMore(false);
       }
     },
-    [sortBy, sortOrder, clipType]
+    []
   );
 
   // AUTO-REFRESH po powrocie z upload page
@@ -129,22 +130,22 @@ function DashboardPage() {
     const fromUpload = location.state?.fromUpload;
 
     if (fromUpload) {
-      console.log("🔄 Returned from upload, scheduling refreshes...");
+      logger.info("Returned from upload, scheduling refreshes...");
 
       // Odśwież natychmiast
       fetchClips(1, false);
 
       // Harmonogram refreshy (thumbnails mogą się jeszcze generować)
       refreshTimeoutRef.current = setTimeout(() => {
-        console.log("🔄 Refresh 1/3 (2s)");
+        logger.info("Refresh 1/3 (2s)");
         fetchClips(1, false);
 
         refreshTimeoutRef.current = setTimeout(() => {
-          console.log("🔄 Refresh 2/3 (5s)");
+          logger.info("Refresh 2/3 (5s)");
           fetchClips(1, false);
 
           refreshTimeoutRef.current = setTimeout(() => {
-            console.log("🔄 Refresh 3/3 (10s - final)");
+            logger.info("Refresh 3/3 (10s - final)");
             fetchClips(1, false);
           }, 5000);
         }, 3000);
@@ -223,7 +224,7 @@ function DashboardPage() {
   };
 
   const handleBulkActionComplete = (action, result) => {
-    console.log("Bulk action completed:", action, result);
+    logger.info("Bulk action completed:", action, result);
 
     if (action === "delete" && result?.success) {
       setClips((prev) => prev.filter((clip) => !selectedIds.includes(clip.id)));
@@ -250,7 +251,7 @@ function DashboardPage() {
             return newClips;
           });
         })
-        .catch((err) => console.error("Failed to refresh clip:", err));
+        .catch((err) => logger.error("Failed to refresh clip:", err));
 
       return prevClips;
     });

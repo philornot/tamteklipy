@@ -4,6 +4,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import api from "../services/api";
+import { logger } from "../utils/logger";
 
 const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB
 const MAX_PARALLEL = 3; // maks. liczba równoległych chunków
@@ -163,7 +164,7 @@ export const useChunkedUpload = () => {
       };
     } catch (error) {
       if (error.name === "AbortError") {
-        console.warn("Upload aborted:", uploadId);
+        logger.warn("Upload aborted:", uploadId);
       }
 
       setUploads((prev) => ({
@@ -195,7 +196,7 @@ export const useChunkedUpload = () => {
         return newUploads;
       });
     } catch (error) {
-      console.error("Cancel failed:", error);
+      logger.error("Cancel failed:", error);
     }
   }, []);
 

@@ -1,6 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 import {createContext, useEffect, useState} from "react";
 import api from "../services/api";
+import { logger } from "../utils/logger";
 
 export const AuthContext = createContext(null);
 
@@ -45,11 +46,8 @@ export function AuthProvider({children}) {
 
             const userData = userResponse.data;
 
-            // DEBUG - dodaj to
-            console.log("=== /auth/me Response ===");
-            console.log(userData);
-            console.log("is_admin:", userData.is_admin);
-            console.log("========================");
+            // DEBUG
+            logger.debug("/auth/me response", userData);
 
             // Zapisz w state i localStorage
             setToken(access_token);
@@ -59,7 +57,7 @@ export function AuthProvider({children}) {
 
             return {success: true};
         } catch (error) {
-            console.error("Login failed:", error);
+            logger.error("Login failed:", error);
             const status = error.response?.status;
             const backendMessage = error.response?.data?.message;
 

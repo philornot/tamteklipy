@@ -1,5 +1,5 @@
 """
-Test permissions - sprawdza kto może przyznać jakie nagrody
+Test permissions — sprawdza kto może przyznać jakie nagrody
 """
 import sys
 from pathlib import Path
@@ -9,8 +9,10 @@ sys.path.insert(0, str(Path(__file__).parent))
 import logging
 from app.core.database import SessionLocal
 from app.models import User, AwardType
+from app.core.logging_config import setup_logging
 
-logging.basicConfig(level=logging.INFO)
+# Spójna konfiguracja logowania
+setup_logging(log_level="INFO")
 logger = logging.getLogger(__name__)
 
 
@@ -22,16 +24,16 @@ def test_user_permissions(username: str):
         user = db.query(User).filter(User.username == username).first()
 
         if not user:
-            logger.error(f"❌ Użytkownik '{username}' nie istnieje")
+            logger.error(f"Użytkownik '{username}' nie istnieje")
             return
 
         logger.info(f"\n{'=' * 80}")
-        logger.info(f"🔐 UPRAWNIENIA UŻYTKOWNIKA: {user.username}")
+        logger.info(f"UPRAWNIENIA UŻYTKOWNIKA: {user.username}")
         logger.info(f"{'=' * 80}")
         logger.info(f"Email: {user.email}")
         logger.info(f"Full name: {user.full_name}")
-        logger.info(f"Admin: {'✅ TAK' if user.is_admin else '❌ NIE'}")
-        logger.info(f"Active: {'✅ TAK' if user.is_active else '❌ NIE'}")
+        logger.info(f"Admin: {'TAK' if user.is_admin else 'NIE'}")
+        logger.info(f"Active: {'TAK' if user.is_active else 'NIE'}")
 
         # Pobierz wszystkie typy nagród
         award_types = db.query(AwardType).order_by(
@@ -50,7 +52,7 @@ def test_user_permissions(username: str):
                 cannot_give.append(award)
 
         # Wyświetl nagrody które MOŻE przyznać
-        logger.info(f"\n✅ MOŻE PRZYZNAĆ ({len(can_give)} nagród):")
+        logger.info(f"\nMOŻE PRZYZNAĆ ({len(can_give)} nagród):")
         logger.info("-" * 80)
 
         for award in can_give:
@@ -74,7 +76,7 @@ def test_user_permissions(username: str):
 
         # Wyświetl nagrody których NIE MOŻE przyznać
         if cannot_give:
-            logger.info(f"\n❌ NIE MOŻE PRZYZNAĆ ({len(cannot_give)} nagród):")
+            logger.info(f"\nNIE MOŻE PRZYZNAĆ ({len(cannot_give)} nagród):")
             logger.info("-" * 80)
 
             for award in cannot_give:
@@ -103,11 +105,11 @@ def test_all_permissions():
         users = db.query(User).all()
 
         if not users:
-            logger.error("❌ Brak użytkowników w bazie")
+            logger.error("Brak użytkowników w bazie")
             return
 
         logger.info(f"\n{'=' * 80}")
-        logger.info(f"🔐 PODSUMOWANIE UPRAWNIEŃ WSZYSTKICH UŻYTKOWNIKÓW")
+        logger.info(f"PODSUMOWANIE UPRAWNIEŃ WSZYSTKICH UŻYTKOWNIKÓW")
         logger.info(f"{'=' * 80}\n")
 
         # Pobierz typy nagród
@@ -170,7 +172,7 @@ def test_award_accessibility(award_name: str):
         award = db.query(AwardType).filter(AwardType.name == award_name).first()
 
         if not award:
-            logger.error(f"❌ Nagroda '{award_name}' nie istnieje")
+            logger.error(f"Nagroda '{award_name}' nie istnieje")
 
             # Pokaż dostępne
             logger.info("\nDostępne nagrody:")
@@ -180,13 +182,13 @@ def test_award_accessibility(award_name: str):
             return
 
         logger.info(f"\n{'=' * 80}")
-        logger.info(f"🏆 DOSTĘPNOŚĆ NAGRODY: {award.display_name}")
+        logger.info(f"DOSTĘPNOŚĆ NAGRODY: {award.display_name}")
         logger.info(f"{'=' * 80}")
         logger.info(f"Name: {award.name}")
         logger.info(f"Icon: lucide:{award.lucide_icon}" if award.lucide_icon else "custom")
         logger.info(f"Color: {award.color}")
-        logger.info(f"System: {'✅ TAK' if award.is_system_award else '❌ NIE'}")
-        logger.info(f"Personal: {'✅ TAK' if award.is_personal else '❌ NIE'}")
+        logger.info(f"System: {'TAK' if award.is_system_award else 'NIE'}")
+        logger.info(f"Personal: {'TAK' if award.is_personal else 'NIE'}")
 
         creator = db.query(User).filter(User.id == award.created_by_user_id).first()
         if creator:
@@ -204,7 +206,7 @@ def test_award_accessibility(award_name: str):
             else:
                 cannot_give.append(user)
 
-        logger.info(f"\n✅ MOGĄ PRZYZNAĆ ({len(can_give)} użytkowników):")
+        logger.info(f"\nMOGĄ PRZYZNAĆ ({len(can_give)} użytkowników):")
         logger.info("-" * 80)
         for user in can_give:
             admin_badge = "[ADMIN]" if user.is_admin else ""
@@ -222,7 +224,7 @@ def test_award_accessibility(award_name: str):
             logger.info(f"  {user.username:15} {admin_badge:8} | {reason}")
 
         if cannot_give:
-            logger.info(f"\n❌ NIE MOGĄ PRZYZNAĆ ({len(cannot_give)} użytkowników):")
+            logger.info(f"\nNIE MOGĄ PRZYZNAĆ ({len(cannot_give)} użytkowników):")
             logger.info("-" * 80)
             for user in cannot_give:
                 logger.info(f"  {user.username:15} | osobista nagroda innego usera")

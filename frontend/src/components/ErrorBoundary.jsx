@@ -1,6 +1,7 @@
 // frontend/src/components/ErrorBoundary.jsx
 import {Component} from 'react';
 import {AlertCircle} from 'lucide-react';
+import { logger } from '../utils/logger';
 
 class ErrorBoundary extends Component {
     constructor(props) {
@@ -13,7 +14,7 @@ class ErrorBoundary extends Component {
     }
 
     componentDidCatch(error, errorInfo) {
-        console.error('Error caught by boundary:', error, errorInfo);
+        logger.error('Error caught by boundary:', error, errorInfo);
     }
 
     render() {

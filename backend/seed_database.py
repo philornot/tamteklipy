@@ -16,8 +16,10 @@ from app.core.security import hash_password
 from app.core.init_db import create_personal_award_for_user
 from sqlalchemy import inspect
 import logging
+from app.core.logging_config import setup_logging
 
-logging.basicConfig(level=logging.INFO)
+# Spójna konfiguracja logowania
+setup_logging(log_level="INFO")
 logger = logging.getLogger(__name__)
 
 
@@ -30,8 +32,8 @@ def check_database_exists():
     missing_tables = [t for t in required_tables if t not in tables]
 
     if missing_tables:
-        logger.error(f"❌ Brakujące tabele: {', '.join(missing_tables)}")
-        logger.error("\n🔧 Rozwiązanie:")
+        logger.error(f"Brakujące tabele: {', '.join(missing_tables)}")
+        logger.error("\nRozwiązanie:")
         logger.error("   python hard_reset.py")
         logger.error("   python seed_database.py --clear")
         return False
@@ -104,7 +106,7 @@ def seed_users(db):
         )
 
         created_users.append(user)
-        logger.info(f"  ✓ {user_data['username']} (admin: {user_data['is_admin']}, personal award created)")
+        logger.info(f"  {user_data['username']} (admin: {user_data['is_admin']}, personal award created)")
 
     db.commit()
     logger.info(f"Utworzono {len(created_users)} użytkowników z osobistymi nagrodami\n")
@@ -136,7 +138,7 @@ def seed_custom_awards(db, users):
                 is_personal=False
             )
             db.add(custom_award)
-            logger.info(f"  ✓ Created custom award by gamer1: {custom_award.display_name}")
+            logger.info(f"  Created custom award by gamer1: {custom_award.display_name}")
         else:
             logger.info(f"  Custom award by gamer1 already exists, skipping")
 
@@ -159,7 +161,7 @@ def seed_custom_awards(db, users):
                 is_personal=False
             )
             db.add(custom_award)
-            logger.info(f"  ✓ Created custom award by gamer2: {custom_award.display_name} (custom icon)")
+            logger.info(f"  Created custom award by gamer2: {custom_award.display_name} (custom icon)")
         else:
             logger.info(f"  Custom award by gamer2 already exists, skipping")
 
@@ -250,7 +252,7 @@ def seed_clips(db, users):
 
         db.add(clip)
         created_clips.append(clip)
-        logger.info(f"  ✓ {clip_data['filename']} (uploader: {uploader.username})")
+        logger.info(f"  {clip_data['filename']} (uploader: {uploader.username})")
 
     db.commit()
     logger.info(f"Utworzono {len(created_clips)} klipów\n")
@@ -373,7 +375,7 @@ def main(clear_first=False):
 
     # Sprawdź czy baza istnieje
     if not check_database_exists():
-        logger.error("\n❌ Baza danych nie istnieje lub jest niepełna!")
+        logger.error("\nBaza danych nie istnieje lub jest niepełna!")
         return
 
     db = SessionLocal()

@@ -10,8 +10,10 @@ import logging
 from app.core.database import SessionLocal, engine
 from app.models import User, Clip, Award, AwardType
 from sqlalchemy import inspect
+from app.core.logging_config import setup_logging
 
-logging.basicConfig(level=logging.INFO)
+# Spójna konfiguracja logowania
+setup_logging(log_level="INFO")
 logger = logging.getLogger(__name__)
 
 
@@ -157,16 +159,16 @@ def print_users():
 def main():
     """Główna funkcja sprawdzająca status"""
 
-    print("\n" + "=" * 80)
-    print("📊 STATUS BAZY DANYCH TAMTEKLIPY")
-    print("=" * 80 + "\n")
+    logger.info("" + "=" * 80)
+    logger.info("STATUS BAZY DANYCH TAMTEKLIPY")
+    logger.info("" + "=" * 80)
 
     # 1. Sprawdź czy baza istnieje
     db_exists = check_database_exists()
-    logger.info(f"Plik bazy danych: {'✅ EXISTS' if db_exists else '❌ NOT FOUND'}")
+    logger.info(f"Plik bazy danych: {'EXISTS' if db_exists else 'NOT FOUND'}")
 
     if not db_exists:
-        logger.warning("\n⚠️  Baza danych nie istnieje!")
+        logger.warning("\nBaza danych nie istnieje!")
         logger.info("Uruchom: python hard_reset.py")
         return
 
@@ -181,9 +183,9 @@ def main():
 
         if schema_info:
             if schema_info['has_new_schema']:
-                logger.info("\n✅ Schema award_types: NOWY (z lucide icons)")
+                logger.info("\nSchema award_types: NOWY (z lucide icons)")
             else:
-                logger.warning("\n⚠️  Schema award_types: STARY (z emotkami)")
+                logger.warning("\nSchema award_types: STARY (z emotkami)")
                 logger.warning("Uruchom: python hard_reset.py")
                 logger.info(f"Kolumny: {', '.join(schema_info['columns'])}")
 
@@ -193,15 +195,15 @@ def main():
         user_columns = {col['name'] for col in inspector.get_columns('users')}
 
         if 'is_admin' in user_columns:
-            logger.info("✅ Schema users: NOWY (z is_admin)")
+            logger.info("Schema users: NOWY (z is_admin)")
         else:
-            logger.warning("⚠️  Schema users: STARY (bez is_admin)")
+            logger.warning("Schema users: STARY (bez is_admin)")
 
     # 5. Statystyki
     stats = get_statistics()
 
     if stats:
-        logger.info("\n📈 STATYSTYKI:")
+        logger.info("\nSTATYSTYKI:")
         logger.info(f"  Użytkownicy: {stats['users']} (w tym {stats['admins']} adminów)")
         logger.info(f"  Klipy: {stats['clips']}")
         logger.info(f"  Przyznane nagrody: {stats['awards_given']}")
@@ -212,10 +214,10 @@ def main():
 
         # Sprawdź czy każdy user ma osobistą nagrodę
         if stats['users'] > 0 and stats['personal_awards'] != stats['users']:
-            logger.warning(f"\n⚠️  Problem: {stats['users']} userów, ale {stats['personal_awards']} osobistych nagród!")
+            logger.warning(f"\nProblem: {stats['users']} użytkowników, ale {stats['personal_awards']} osobistych nagród!")
             logger.warning("Powinno być: 1 osobista nagroda = 1 user")
         elif stats['users'] > 0:
-            logger.info("\n✅ Każdy użytkownik ma swoją osobistą nagrodę")
+            logger.info("\nKażdy użytkownik ma swoją osobistą nagrodę")
 
     # 6. Lista award types
     if stats and stats['award_types_total'] > 0:
@@ -225,9 +227,9 @@ def main():
     if stats and stats['users'] > 0:
         print_users()
 
-    print("\n" + "=" * 80)
-    print("✅ Sprawdzanie zakończone")
-    print("=" * 80 + "\n")
+    logger.info("" + "=" * 80)
+    logger.info("Sprawdzanie zakończone")
+    logger.info("" + "=" * 80)
 
 
 if __name__ == "__main__":

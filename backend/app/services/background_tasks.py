@@ -26,13 +26,13 @@ def process_thumbnail_background(clip_id: int, file_path: str, clip_type: ClipTy
 
     Args:
         clip_id: ID klipa w bazie
-        file_path: Ścieżka do pliku
+        file_path: ścieżka do pliku
         clip_type: VIDEO lub SCREENSHOT
     """
     db = SessionLocal()
 
     try:
-        logger.info(f"[BG] 🎨 Processing thumbnail for clip {clip_id}")
+        logger.info(f"[BG] Processing thumbnail for clip {clip_id}")
 
         # Przygotuj ścieżki dla thumbnails
         thumbnails_dir = Path(settings.thumbnails_path)
@@ -51,10 +51,10 @@ def process_thumbnail_background(clip_id: int, file_path: str, clip_type: ClipTy
 
         # Generuj thumbnail w zależności od typu
         if clip_type == ClipType.VIDEO:
-            logger.info(f"[BG] 🎥 Extracting video metadata...")
+            logger.info(f"[BG] Extracting video metadata...")
             metadata = extract_video_metadata(file_path)
 
-            logger.info(f"[BG] 📸 Generating video thumbnail...")
+            logger.info(f"[BG] Generating video thumbnail...")
             success, webp_path = generate_thumbnail(
                 video_path=file_path,
                 output_path=str(thumbnail_base_path),
@@ -66,15 +66,15 @@ def process_thumbnail_background(clip_id: int, file_path: str, clip_type: ClipTy
             if success:
                 thumbnail_path = f"{thumbnail_base_path}.jpg"
                 thumbnail_webp_path = webp_path
-                logger.info(f"[BG] ✅ Video thumbnail generated (JPEG + WebP)")
+                logger.info(f"[BG] Video thumbnail generated (JPEG + WebP)")
             else:
-                logger.warning(f"[BG] ⚠️ Video thumbnail generation failed")
+                logger.warning(f"[BG] Video thumbnail generation failed")
 
         else:  # SCREENSHOT
-            logger.info(f"[BG] 🖼️ Extracting image metadata...")
+            logger.info(f"[BG] Extracting image metadata...")
             metadata = extract_image_metadata(file_path)
 
-            logger.info(f"[BG] 📸 Generating image thumbnail...")
+            logger.info(f"[BG] Generating image thumbnail...")
             success, webp_path = generate_image_thumbnail(
                 image_path=file_path,
                 output_path=str(thumbnail_base_path),
@@ -85,9 +85,9 @@ def process_thumbnail_background(clip_id: int, file_path: str, clip_type: ClipTy
             if success:
                 thumbnail_path = f"{thumbnail_base_path}.jpg"
                 thumbnail_webp_path = webp_path
-                logger.info(f"[BG] ✅ Image thumbnail generated (JPEG + WebP)")
+                logger.info(f"[BG] Image thumbnail generated (JPEG + WebP)")
             else:
-                logger.warning(f"[BG] ⚠️ Image thumbnail generation failed")
+                logger.warning(f"[BG] Image thumbnail generation failed")
 
         # Zaktualizuj bazę danych
         clip = db.query(Clip).filter(Clip.id == clip_id).first()
@@ -103,7 +103,7 @@ def process_thumbnail_background(clip_id: int, file_path: str, clip_type: ClipTy
 
             db.commit()
 
-            logger.info(f"[BG] 💾 Clip {clip_id} updated with:")
+            logger.info(f"[BG] Clip {clip_id} updated with:")
             logger.info(f"[BG]    - Thumbnail: {thumbnail_path is not None}")
             logger.info(f"[BG]    - WebP: {thumbnail_webp_path is not None}")
             logger.info(f"[BG]    - Metadata: {metadata is not None}")
@@ -113,12 +113,12 @@ def process_thumbnail_background(clip_id: int, file_path: str, clip_type: ClipTy
                 if metadata.get('duration'):
                     logger.info(f"[BG]    - Duration: {metadata.get('duration')}s")
         else:
-            logger.error(f"[BG] ❌ Clip {clip_id} not found in database!")
+            logger.error(f"[BG] Clip {clip_id} not found in database!")
 
-        logger.info(f"[BG] 🎉 Background processing complete for clip {clip_id}")
+        logger.info(f"[BG] Background processing complete for clip {clip_id}")
 
     except Exception as e:
-        logger.error(f"[BG] ❌ Thumbnail processing failed for clip {clip_id}: {e}", exc_info=True)
+        logger.error(f"[BG] Thumbnail processing failed for clip {clip_id}: {e}", exc_info=True)
         db.rollback()
 
     finally:

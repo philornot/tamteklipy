@@ -4,6 +4,7 @@ import { MessageSquare, Loader } from 'lucide-react';
 import api from '../../services/api';
 import CommentItem from './CommentItem';
 import CommentForm from './CommentForm';
+import { logger } from '../../utils/logger';
 
 function CommentSection({ clipId, videoRef = null }) {
   const [comments, setComments] = useState([]);
@@ -30,7 +31,7 @@ function CommentSection({ clipId, videoRef = null }) {
       setTotal(response.data?.total || 0);
       setHasMore(response.data?.page < response.data?.pages);
     } catch (err) {
-      console.error('Failed to fetch comments:', err);
+      logger.error('Failed to fetch comments:', err);
       // W przypadku błędu, ustaw pustą tablicę komentarzy jeśli nie jest to dołączanie
       if (!append) {
         setComments([]);

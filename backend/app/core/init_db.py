@@ -6,6 +6,7 @@ import logging
 from app.core.database import engine, Base, check_database_connection, get_database_info, SessionLocal
 from app.models import User, Clip, Award, Comment
 from app.models.award_type import AwardType
+from app.core.logging_config import setup_logging
 
 logger = logging.getLogger(__name__)
 
@@ -170,5 +171,6 @@ def drop_db():
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
+    # Spójna konfiguracja logowania także przy uruchamianiu bezpośrednim
+    setup_logging(log_level="INFO")
     init_db()

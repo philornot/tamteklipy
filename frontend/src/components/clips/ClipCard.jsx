@@ -3,6 +3,7 @@ import * as LucideIcons from "lucide-react";
 import { Award, Calendar, Image, Play, User, Check } from "lucide-react";
 import ClipModal from "./ClipModal";
 import { getBaseUrl, getThumbnailUrl, addTokenToUrl } from "../../utils/urlHelper";
+import { logger } from "../../utils/logger";
 
 function ClipCard({
   clip,
@@ -45,7 +46,7 @@ function ClipCard({
           className="w-8 h-8 rounded-full border-2 border-gray-900 bg-gray-800 object-cover"
           loading="lazy"
           onError={(e) => {
-            console.error("Award icon load error:", awardIcon.icon_url);
+            logger.error("Award icon load error:", awardIcon.icon_url);
             e.target.style.display = "none";
             const fallback = document.createElement("div");
             fallback.className =
@@ -138,8 +139,8 @@ function ClipCard({
               className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
               loading="lazy"
               onError={(e) => {
-                console.error("Thumbnail load error for clip", clip.id);
-                console.error("Attempted URL:", thumbnailUrl);
+                logger.error("Thumbnail load error for clip", clip.id);
+                logger.error("Attempted URL:", thumbnailUrl);
                 e.target.style.display = "none";
                 // Pokaż placeholder
                 e.target.parentElement.innerHTML = `

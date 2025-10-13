@@ -5,6 +5,7 @@ import AwardSection from "./AwardSection";
 import CommentSection from "../comments/CommentSection";
 import { getDownloadUrl, getStreamUrl } from "../../utils/urlHelper";
 import { Button, Badge } from "../ui/StyledComponents";
+import { logger } from "../../utils/logger";
 
 function ClipModal({ clip, onClose, onClipUpdate }) {
   const [clipDetails, setClipDetails] = useState(null);
@@ -16,7 +17,7 @@ function ClipModal({ clip, onClose, onClipUpdate }) {
       const response = await api.get(`/files/clips/${clip.id}`);
       setClipDetails(response.data);
     } catch (err) {
-      console.error("Failed to fetch clip details:", err);
+      logger.error("Failed to fetch clip details:", err);
     } finally {
       setLoading(false);
     }
@@ -34,7 +35,7 @@ function ClipModal({ clip, onClose, onClipUpdate }) {
 
   const handleDownload = () => {
     const downloadUrl = getDownloadUrl(clip.id);
-    console.log("Downloading from:", downloadUrl);
+    logger.info("Downloading from:", downloadUrl);
     window.open(downloadUrl, "_blank");
   };
 
@@ -106,8 +107,8 @@ function ClipModal({ clip, onClose, onClipUpdate }) {
                   className="w-full rounded-card bg-black"
                   src={mediaUrl}
                   onError={(e) => {
-                    console.error("Video load error:", e);
-                    console.error("Attempted URL:", mediaUrl);
+                    logger.error("Video load error:", e);
+                    logger.error("Attempted URL:", mediaUrl);
                   }}
                 >
                   Twoja przeglądarka nie obsługuje video.
@@ -118,8 +119,8 @@ function ClipModal({ clip, onClose, onClipUpdate }) {
                   alt={clip.filename}
                   className="w-full rounded-card"
                   onError={(e) => {
-                    console.error("Image load error:", e);
-                    console.error("Attempted URL:", mediaUrl);
+                    logger.error("Image load error:", e);
+                    logger.error("Attempted URL:", mediaUrl);
                   }}
                 />
               )}

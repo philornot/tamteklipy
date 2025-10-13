@@ -4,6 +4,7 @@ import api from '../services/api'
 import { useAuth } from '../hooks/useAuth'
 import usePageTitle from "../hooks/usePageTitle.js";
 import { Card } from '../components/ui/StyledComponents';
+import { logger } from "../utils/logger";
 
 function StatsPage() {
   usePageTitle("Statystyki");
@@ -20,7 +21,7 @@ function StatsPage() {
       const response = await api.get('/awards/stats')
       setStats(response.data)
     } catch (err) {
-      console.error('Failed to fetch stats:', err)
+      logger.error('Failed to fetch stats:', err)
     } finally {
       setLoading(false)
     }

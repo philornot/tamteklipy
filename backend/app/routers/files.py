@@ -70,7 +70,7 @@ async def upload_file(
     4. Zwróć response ✅ (użytkownik widzi sukces!)
     5. Generuj thumbnail w tle 🎨 (nie blokuje)
     """
-    logger.info(f"📤 Upload from {current_user.username}: {file.filename}")
+    logger.info(f"Upload from {current_user.username}: {file.filename}")
 
     try:
         # 1. Waliduj typ
@@ -93,7 +93,7 @@ async def upload_file(
 
         # 6. Zapisz plik na dysku
         file_path = await save_file_to_disk(file_content, unique_filename, clip_type)
-        logger.info(f"💾 File saved: {file_path}")
+        logger.info(f"File saved: {file_path}")
 
         # 7. Zapisz do bazy BEZ thumbnails (jeszcze ich nie ma)
         new_clip = await create_clip_record(
@@ -107,7 +107,7 @@ async def upload_file(
             thumbnail_webp_path=None,
             metadata=None  # Będzie uzupełnione w tle
         )
-        logger.info(f"✅ Clip created: ID={new_clip.id}")
+        logger.info(f"Clip created: ID={new_clip.id}")
 
         # 8. Zakolejkuj thumbnail w TLE (nie czekamy!)
         background_tasks.add_task(
@@ -116,7 +116,7 @@ async def upload_file(
             file_path=str(file_path),
             clip_type=clip_type
         )
-        logger.info(f"🎨 Thumbnail queued in background for clip {new_clip.id}")
+        logger.info(f"Thumbnail queued in background for clip {new_clip.id}")
 
         # 9. Invaliduj cache
         await invalidate_clips_cache()
@@ -132,7 +132,7 @@ async def upload_file(
             "created_at": new_clip.created_at.isoformat(),
 
             # Status thumbnails
-            "thumbnail_status": "processing",  # 🎨 W trakcie generowania
+            "thumbnail_status": "processing",  # W trakcie generowania
             "thumbnail_ready": False,
             "processing_info": "Miniaturka jest generowana w tle"
         }
@@ -140,7 +140,7 @@ async def upload_file(
     except (ValidationError, FileUploadError, StorageError):
         raise
     except Exception as e:
-        logger.error(f"❌ Unexpected upload error: {e}", exc_info=True)
+        logger.error(f"Unexpected upload error: {e}", exc_info=True)
         raise FileUploadError(
             message="Nieoczekiwany błąd podczas uploadu",
             filename=file.filename,

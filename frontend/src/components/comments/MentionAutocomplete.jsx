@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import { User } from 'lucide-react';
 import api from '../../services/api';
+import { logger } from '../../utils/logger';
 
 function MentionAutocomplete({ query, onSelect, onClose }) {
   const [suggestions, setSuggestions] = useState([]);
@@ -23,7 +24,7 @@ function MentionAutocomplete({ query, onSelect, onClose }) {
         setSuggestions(response.data);
         setSelectedIndex(0);
       } catch (err) {
-        console.error('Failed to fetch mention suggestions:', err);
+        logger.error('Failed to fetch mention suggestions:', err);
         setSuggestions([]);
       } finally {
         setLoading(false);

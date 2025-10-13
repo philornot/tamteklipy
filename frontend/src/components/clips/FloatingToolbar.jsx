@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Download, Tag, FolderPlus, Trash2, X } from 'lucide-react';
 import api from '../../services/api';
 import { useAuth } from '../../hooks/useAuth';
+import { logger } from '../../utils/logger';
 
 function FloatingToolbar({ selectedCount, selectedIds, onActionComplete, onCancel }) {
   const [loading, setLoading] = useState(false);
@@ -36,7 +37,7 @@ function FloatingToolbar({ selectedCount, selectedIds, onActionComplete, onCance
 
       onActionComplete?.('download');
     } catch (err) {
-      console.error('Download failed:', err);
+      logger.error('Download failed:', err);
       setError('Nie udało się pobrać plików');
     } finally {
       setLoading(false);
@@ -77,7 +78,7 @@ function FloatingToolbar({ selectedCount, selectedIds, onActionComplete, onCance
         setError(response.data.message || 'Nie udało się usunąć klipów');
       }
     } catch (err) {
-      console.error('Delete failed:', err);
+      logger.error('Delete failed:', err);
       setError(err.response?.data?.message || 'Nie udało się usunąć klipów');
     } finally {
       setLoading(false);

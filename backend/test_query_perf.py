@@ -16,8 +16,10 @@ from app.core.database import SessionLocal
 from app.models.clip import Clip
 from app.models.award import Award
 from app.core.init_db import init_db  # ...added import
+from app.core.logging_config import setup_logging
 
-logging.basicConfig(level=logging.INFO)
+# Spójna konfiguracja logowania
+setup_logging(log_level="INFO")
 logger = logging.getLogger(__name__)
 
 # Modułowe zmienne do podsumowania
@@ -45,10 +47,10 @@ def run_joinedload():
         ).order_by(Clip.created_at.desc()).limit(12).all()
         elapsed = time.time() - start
 
-        logger.info(f"✓ Loaded {len(clips)} clips")
-        logger.info(f"⏱️  Time: {elapsed * 1000:.2f}ms")
+        logger.info(f"Loaded {len(clips)} clips")
+        logger.info(f"Time: {elapsed * 1000:.2f}ms")
         total_awards = sum(len(clip.awards) for clip in clips)
-        logger.info(f"📊 Total awards: {total_awards}")
+        logger.info(f"Total awards: {total_awards}")
 
         return elapsed
     finally:
@@ -67,10 +69,10 @@ def run_selectinload():
         ).order_by(Clip.created_at.desc()).limit(12).all()
         elapsed = time.time() - start
 
-        logger.info(f"✓ Loaded {len(clips)} clips")
-        logger.info(f"⏱️  Time: {elapsed * 1000:.2f}ms")
+        logger.info(f"Loaded {len(clips)} clips")
+        logger.info(f"Time: {elapsed * 1000:.2f}ms")
         total_awards = sum(len(clip.awards) for clip in clips)
-        logger.info(f"📊 Total awards: {total_awards}")
+        logger.info(f"Total awards: {total_awards}")
 
         return elapsed
     finally:
@@ -132,9 +134,9 @@ def test_explain_query():
         plan_text = " ".join(str(row) for row in result)
 
         if "SCAN TABLE" in plan_text:
-            logger.warning("⚠️  SCAN TABLE detected - brak użycia indexu!")
+            logger.warning("SCAN TABLE detected - brak użycia indexu!")
         else:
-            logger.info("✓ Query używa indexów")
+            logger.info("Query używa indexów")
 
     finally:
         db.close()
@@ -158,7 +160,7 @@ def test_index_usage():
         logger.info("\nIndexy na tabeli 'clips':")
         for row in result:
             if row[0] and not row[0].startswith('sqlite_'):
-                logger.info(f"  ✓ {row[0]}")
+                logger.info(f"  {row[0]}")
                 if row[1]:
                     logger.info(f"    {row[1]}")
 
@@ -167,7 +169,7 @@ def test_index_usage():
 
 
 def main():
-    logger.info("🔍 Testing query performance for /api/files/clips")
+    logger.info("Testing query performance for /api/files/clips")
     logger.info("")
 
     # Test 1: joinedload
@@ -192,17 +194,17 @@ def main():
 
     if time_selectinload_local < time_joinedload_local:
         improvement = ((time_joinedload_local - time_selectinload_local) / time_joinedload_local) * 100
-        logger.info(f"✓ Poprawa: {improvement:.1f}% szybciej")
+        logger.info(f"Poprawa: {improvement:.1f}% szybciej")
     else:
-        logger.warning(f"⚠️  selectinload wolniejszy (może mała liczba rekordów)")
+        logger.warning(f"selectinload wolniejszy (może mała liczba rekordów)")
 
     # Acceptance criteria
     logger.info("")
     logger.info("Acceptance Criteria:")
     if time_selectinload_local < 0.2:
-        logger.info(f"✓ Query time < 200ms ({time_selectinload_local * 1000:.0f}ms)")
+        logger.info(f"Query time < 200ms ({time_selectinload_local * 1000:.0f}ms)")
     else:
-        logger.warning(f"✗ Query time > 200ms ({time_selectinload_local * 1000:.0f}ms)")
+        logger.warning(f"Query time > 200ms ({time_selectinload_local * 1000:.0f}ms)")
 
 
 if __name__ == "__main__":

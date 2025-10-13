@@ -10,8 +10,10 @@ import logging
 from app.core.database import SessionLocal
 from app.models.user import User
 from app.core.security import hash_password
+from app.core.logging_config import setup_logging
 
-logging.basicConfig(level=logging.INFO)
+# Spójna konfiguracja logowania
+setup_logging(log_level="INFO")
 logger = logging.getLogger(__name__)
 
 
@@ -30,7 +32,7 @@ def reset_password(username: str, new_password: str):
         user = db.query(User).filter(User.username == username).first()
 
         if not user:
-            logger.error(f"❌ Użytkownik '{username}' nie istnieje!")
+            logger.error(f"Użytkownik '{username}' nie istnieje!")
             logger.info("\nDostępni użytkownicy:")
             all_users = db.query(User).all()
             for u in all_users:
@@ -45,7 +47,7 @@ def reset_password(username: str, new_password: str):
         admin_info = " [ADMIN]" if user.is_admin else ""
         logger.info("")
         logger.info("=" * 60)
-        logger.info(f"✅ Hasło zmienione pomyślnie!")
+        logger.info("Hasło zmienione pomyślnie!")
         logger.info("=" * 60)
         logger.info(f"Użytkownik: {username}{admin_info}")
         logger.info(f"Nowe hasło: {new_password}")
@@ -56,7 +58,7 @@ def reset_password(username: str, new_password: str):
         return True
 
     except Exception as e:
-        logger.error(f"❌ Błąd podczas resetowania hasła: {e}")
+        logger.error(f"Błąd podczas resetowania hasła: {e}")
         db.rollback()
         return False
     finally:
@@ -65,11 +67,11 @@ def reset_password(username: str, new_password: str):
 
 def main():
     if len(sys.argv) != 3:
-        print("Użycie: python reset_password.py <username> <new_password>")
-        print("")
-        print("Przykład:")
-        print("  python reset_password.py philornot NoweHaslo123!")
-        print("")
+        logger.info("Użycie: python reset_password.py <username> <new_password>")
+        logger.info("")
+        logger.info("Przykład:")
+        logger.info("  python reset_password.py philornot NoweHaslo123!")
+        logger.info("")
         sys.exit(1)
 
     username = sys.argv[1]

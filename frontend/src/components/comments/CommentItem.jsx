@@ -4,6 +4,7 @@ import { Edit2, Trash2, Reply, Clock, Shield } from 'lucide-react';
 import api from '../../services/api';
 import { useAuth } from '../../hooks/useAuth';
 import CommentForm from './CommentForm';
+import { logger } from '../../utils/logger';
 
 function CommentItem({
   comment,
@@ -74,7 +75,7 @@ function CommentItem({
       onCommentUpdated(comment.id, editContent.trim());
       setIsEditing(false);
     } catch (err) {
-      console.error('Failed to update comment:', err);
+      logger.error('Failed to update comment:', err);
       alert(err.response?.data?.message || 'Nie udało się zaktualizować komentarza');
     } finally {
       setUpdating(false);
@@ -91,7 +92,7 @@ function CommentItem({
       await api.delete(`/comments/${comment.id}`);
       onCommentDeleted(comment.id, isReply, comment.parent_id);
     } catch (err) {
-      console.error('Failed to delete comment:', err);
+      logger.error('Failed to delete comment:', err);
       alert(err.response?.data?.message || 'Nie udało się usunąć komentarza');
     } finally {
       setDeleting(false);

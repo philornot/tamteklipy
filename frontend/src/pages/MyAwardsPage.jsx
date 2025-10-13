@@ -8,6 +8,7 @@ import EditMyAwardModal from "../components/awards/EditMyAwardModal";
 import { getBaseUrl } from "../utils/urlHelper";
 import usePageTitle from "../hooks/usePageTitle.js";
 import { Button, Card, Badge } from "../components/ui/StyledComponents";
+import { logger } from "../utils/logger";
 
 function MyAwardsPage() {
   usePageTitle("Moje nagrody");
@@ -34,7 +35,7 @@ function MyAwardsPage() {
       });
       setAwardTypesMap(typesMap);
     } catch (err) {
-      console.error("Failed to fetch data:", err);
+      logger.error("Failed to fetch data:", err);
       toast.error("Nie udało się załadować nagród");
     } finally {
       setLoading(false);

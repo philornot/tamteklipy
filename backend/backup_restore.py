@@ -10,8 +10,10 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 import logging
 import argparse
+from app.core.logging_config import setup_logging
 
-logging.basicConfig(level=logging.INFO)
+# Spójna konfiguracja logowania
+setup_logging(log_level="INFO")
 logger = logging.getLogger(__name__)
 
 
@@ -26,7 +28,7 @@ def backup_database(backup_dir: str = "backups"):
     db_file = Path("tamteklipy.db")
 
     if not db_file.exists():
-        logger.error("❌ Plik bazy danych nie istnieje!")
+        logger.error("Plik bazy danych nie istnieje!")
         return False
 
     # Utwórz katalog backupów
@@ -42,7 +44,7 @@ def backup_database(backup_dir: str = "backups"):
         shutil.copy2(db_file, backup_file)
 
         file_size = backup_file.stat().st_size / (1024 * 1024)  # MB
-        logger.info(f"✅ Backup utworzony pomyślnie!")
+        logger.info("Backup utworzony pomyślnie!")
         logger.info(f"   Plik: {backup_file}")
         logger.info(f"   Rozmiar: {file_size:.2f} MB")
 
@@ -52,7 +54,7 @@ def backup_database(backup_dir: str = "backups"):
         return True
 
     except Exception as e:
-        logger.error(f"❌ Błąd podczas tworzenia backupu: {e}")
+        logger.error(f"Błąd podczas tworzenia backupu: {e}")
         return False
 
 
@@ -61,20 +63,20 @@ def restore_database(backup_file: str):
     Przywraca bazę danych z backupu
 
     Args:
-        backup_file: Ścieżka do pliku backupu
+        backup_file: ścieżka do pliku backupu
     """
 
     backup_path = Path(backup_file)
 
     if not backup_path.exists():
-        logger.error(f"❌ Plik backupu nie istnieje: {backup_file}")
+        logger.error(f"Plik backupu nie istnieje: {backup_file}")
         return False
 
     db_file = Path("tamteklipy.db")
 
     # Ostrzeżenie
     logger.warning("=" * 60)
-    logger.warning("⚠️  UWAGA: RESTORE BAZY DANYCH")
+    logger.warning("UWAGA: RESTORE BAZY DANYCH")
     logger.warning("=" * 60)
 
     if db_file.exists():
@@ -104,7 +106,7 @@ def restore_database(backup_file: str):
         shutil.copy2(backup_path, db_file)
 
         logger.info("")
-        logger.info("✅ Restore zakończony pomyślnie!")
+        logger.info("Restore zakończony pomyślnie!")
         logger.info(f"   Przywrócono: {db_file}")
 
         # Sprawdź status
@@ -114,7 +116,7 @@ def restore_database(backup_file: str):
         return True
 
     except Exception as e:
-        logger.error(f"❌ Błąd podczas restore: {e}")
+        logger.error(f"Błąd podczas restore: {e}")
         return False
 
 
@@ -145,7 +147,7 @@ def list_backups(backup_dir: str = "backups", limit: int = None):
         return
 
     logger.info("")
-    logger.info(f"📁 Dostępne backupy ({len(backups)}):")
+    logger.info(f"Dostępne backupy ({len(backups)}):")
     logger.info("=" * 80)
 
     for i, backup in enumerate(backups):
@@ -161,7 +163,7 @@ def list_backups(backup_dir: str = "backups", limit: int = None):
         logger.info(f"   Rozmiar: {size_mb:.2f} MB")
         logger.info("")
 
-    if len(backups) > limit and limit:
+    if limit and len(backups) > limit:
         logger.info(f"... i {len(backups) - limit} więcej")
         logger.info("")
 
@@ -202,11 +204,11 @@ def cleanup_old_backups(backup_dir: str = "backups", keep: int = 10):
     for backup in to_remove:
         try:
             backup.unlink()
-            logger.info(f"  ✓ Usunięto: {backup.name}")
+            logger.info(f"  Usunięto: {backup.name}")
         except Exception as e:
-            logger.error(f"  ✗ Błąd usuwania {backup.name}: {e}")
+            logger.error(f"  Błąd usuwania {backup.name}: {e}")
 
-    logger.info(f"✅ Zostało {keep} najnowszych backupów")
+    logger.info(f"Zostało {keep} najnowszych backupów")
 
 
 def main():
@@ -259,22 +261,17 @@ def main():
 
     args = parser.parse_args()
 
-    if not args.command:
-        parser.print_help()
-        return
-
     if args.command == 'backup':
         backup_database(args.dir)
-
     elif args.command == 'restore':
         restore_database(args.backup_file)
-
     elif args.command == 'list':
         list_backups(args.dir, args.limit)
-
     elif args.command == 'cleanup':
         cleanup_old_backups(args.dir, args.keep)
+    else:
+        parser.print_help()
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

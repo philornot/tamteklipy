@@ -3,6 +3,7 @@ import { useState, useRef, useEffect } from 'react';
 import { Send, Clock, X } from 'lucide-react';
 import api from '../../services/api';
 import MentionAutocomplete from './MentionAutocomplete';
+import { logger } from '../../utils/logger';
 
 function CommentForm({
   clipId,
@@ -85,7 +86,7 @@ function CommentForm({
       onCancel();
     }
   } catch (err) {
-    console.error('Failed to post comment:', err);
+    logger.error('Failed to post comment:', err);
     setError(err.response?.data?.message || 'Nie udało się dodać komentarza');
   } finally {
     setSubmitting(false);
@@ -225,4 +226,3 @@ function CommentForm({
 }
 
 export default CommentForm;
-

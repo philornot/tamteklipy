@@ -3,6 +3,8 @@
  * Zmniejsza rozmiar pliku o 60-80% bez widocznej utraty jakości
  */
 
+import { logger } from "./logger";
+
 export const compressImage = async (
   file,
   maxWidth = 1920,
@@ -55,10 +57,8 @@ export const compressImage = async (
               lastModified: Date.now(),
             });
 
-            console.log(
-              `Compressed (${desiredType}): ${(file.size / 1024).toFixed(
-                0
-              )}KB → ${(blob.size / 1024).toFixed(0)}KB`
+            logger.info(
+              `Compressed (${desiredType}): ${(file.size / 1024).toFixed(0)}KB -> ${(blob.size / 1024).toFixed(0)}KB`
             );
             resolve(compressedFile);
           },
