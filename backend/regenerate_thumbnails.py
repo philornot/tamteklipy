@@ -92,11 +92,10 @@ def regenerate_all_thumbnails():
 
                     success_count += 1
                 else:
-                    logger.error(f"Clip {clip.id}: Generation failed")
-                    error_count += 1
+                    logger.warning(f"Clip {clip.id}: Generation failed")
 
             except Exception as e:
-                logger.error(f"Clip {clip.id}: Error - {e}")
+                logger.warning(f"Clip {clip.id}: Error - {e}")
                 error_count += 1
                 db.rollback()
 
@@ -110,7 +109,7 @@ def regenerate_all_thumbnails():
         logger.info("=" * 50)
 
     except Exception as e:
-        logger.error(f"Migration failed: {e}")
+        logger.warning(f"Migration failed: {e}")
         raise
     finally:
         db.close()

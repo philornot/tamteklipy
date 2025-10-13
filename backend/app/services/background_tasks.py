@@ -113,23 +113,23 @@ def process_thumbnail_background(clip_id: int, file_path: str, clip_type: ClipTy
                 if metadata.get('duration'):
                     logger.info(f"[BG]    - Duration: {metadata.get('duration')}s")
         else:
-            logger.error(f"[BG] Clip {clip_id} not found in database!")
+            logger.warning(f"[BG] Clip {clip_id} not found in database!")
 
         logger.info(f"[BG] Background processing complete for clip {clip_id}")
 
     except Exception as e:
-        logger.error(f"[BG] Thumbnail processing failed for clip {clip_id}: {e}", exc_info=True)
+        logger.warning(f"[BG] Thumbnail processing failed for clip {clip_id}: {e}", exc_info=True)
         db.rollback()
 
     finally:
         db.close()
 
 
-# Opcjonalnie: Funkcja do retry jeśli thumbnail się nie udał
+# Opcjonalnie: Funkcja do retry, jeśli thumbnail się nie udał
 def retry_thumbnail_generation(clip_id: int):
     """
     Ponowna próba wygenerowania thumbnail dla istniejącego klipa
-    Przydatne jeśli pierwsze generowanie się nie powiodło
+    Przydatne, jeśli pierwsze generowanie się nie powiodło
     """
     db = SessionLocal()
 
@@ -137,7 +137,7 @@ def retry_thumbnail_generation(clip_id: int):
         clip = db.query(Clip).filter(Clip.id == clip_id).first()
 
         if not clip:
-            logger.error(f"[RETRY] Clip {clip_id} not found")
+            logger.warning(f"[RETRY] Clip {clip_id} not found")
             return
 
         if clip.thumbnail_path:
@@ -147,7 +147,7 @@ def retry_thumbnail_generation(clip_id: int):
         file_path = clip.file_path
 
         if not Path(file_path).exists():
-            logger.error(f"[RETRY] File not found: {file_path}")
+            logger.warning(f"[RETRY] File not found: {file_path}")
             return
 
         logger.info(f"[RETRY] Retrying thumbnail generation for clip {clip_id}")
@@ -156,7 +156,7 @@ def retry_thumbnail_generation(clip_id: int):
         process_thumbnail_background(clip_id, file_path, clip.clip_type)
 
     except Exception as e:
-        logger.error(f"[RETRY] Failed to retry thumbnail: {e}")
+        logger.warning(f"[RETRY] Failed to retry thumbnail: {e}")
 
     finally:
         db.close()

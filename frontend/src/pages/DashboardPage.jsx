@@ -113,7 +113,7 @@ function DashboardPage() {
         }
 
         setHasMore(response.data.page < response.data.pages);
-        logger.info("Clips fetched, thumbnails preloaded via HTTP/2 Server Push");
+                logger.info("Clips fetched, thumbnails Link headers set for prefetch");
       } catch (err) {
         logger.error("Failed to fetch clips:", err);
         setError("Nie udało się załadować klipów");

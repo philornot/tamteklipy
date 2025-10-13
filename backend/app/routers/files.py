@@ -1,5 +1,5 @@
 """
-Router dla zarządzania plikami
+Router dla zarządzania plikami - PRODUCTION READY
 Tylko endpointy, logika w services
 """
 import io
@@ -8,12 +8,17 @@ import zipfile
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import List
-from typing import Optional
+from typing import List, Optional
 
 import aiofiles
+from fastapi import APIRouter, UploadFile, File, Depends, BackgroundTasks, Request, Response
+from fastapi.responses import FileResponse, StreamingResponse
+from fastapi_cache.decorator import cache
+from pydantic import BaseModel, Field
+from sqlalchemy import desc, asc
+from sqlalchemy.orm import Session, selectinload, joinedload
+
 from app.core.cache import cache_key_builder
-from app.core.config import settings
 from app.core.database import get_db
 from app.core.dependencies import get_current_user, get_current_user_flexible
 from app.core.exceptions import (
@@ -25,77 +30,120 @@ from app.models.award_type import AwardType
 from app.models.clip import Clip, ClipType
 from app.models.user import User
 from app.schemas.clip import ClipResponse, ClipListResponse, ClipDetailResponse
-from app.services.file_processor import invalidate_clips_cache
 from app.services.file_processor import (
-    save_file_to_disk, generate_thumbnails_sync,
-    create_clip_record, invalidate_clips_cache
+    save_file_to_disk, create_clip_record,
+    invalidate_clips_cache, get_storage_directory
 )
 from app.services.background_tasks import process_thumbnail_background
-from fastapi import APIRouter, UploadFile, File, Depends, BackgroundTasks
-from sqlalchemy.orm import Session
 from app.services.file_validator import (
     validate_file_type, validate_file_size,
     generate_unique_filename, check_disk_space
 )
 from app.utils.file_helpers import can_access_clip
-from fastapi import APIRouter, UploadFile, File, Depends, Request, Response
-from fastapi.responses import FileResponse, StreamingResponse
-from fastapi_cache.decorator import cache
-from pydantic import BaseModel, Field
-from sqlalchemy import desc, asc
-from sqlalchemy.orm import Session
-from sqlalchemy.orm import selectinload
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+# ============================================================================
+# PYDANTIC MODELS
+# ============================================================================
+
+class BulkDownloadRequest(BaseModel):
+    """Request model dla bulk download"""
+    clip_ids: List[int] = Field(..., min_length=1, max_length=50)
+
+
+class BulkActionType(str, Enum):
+    """Dostępne typy akcji masowych"""
+    DELETE = "delete"
+    ADD_TAGS = "add-tags"
+    ADD_TO_SESSION = "add-to-session"
+
+
+class BulkActionRequest(BaseModel):
+    """Request model dla bulk actions"""
+    clip_ids: List[int] = Field(
+        ...,
+        min_length=1,
+        max_length=100,
+        description="Lista ID klipów (1-100)"
+    )
+    action: BulkActionType = Field(..., description="Typ akcji do wykonania")
+    tags: List[str] = Field(
+        default=[],
+        max_length=10,
+        description="Tagi (dla add-tags)"
+    )
+    session_name: str = Field(
+        default="",
+        max_length=100,
+        description="Nazwa sesji (dla add-to-session)"
+    )
+
+
+class BulkActionResponse(BaseModel):
+    """Response model dla bulk actions"""
+    success: bool
+    action: str
+    processed: int
+    failed: int
+    message: str
+    details: dict = {}
+
+
+# ============================================================================
+# UPLOAD ENDPOINT
+# ============================================================================
+
 @router.post("/upload")
 async def upload_file(
-        background_tasks: BackgroundTasks,  # <-- DODANE
-        file: UploadFile = File(...),
-        db: Session = Depends(get_db),
-        current_user: User = Depends(get_current_user)
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
-    Upload pliku - UPROSZCZONA WERSJA
+    Upload pliku z asynchronicznym generowaniem thumbnails
 
-    Zwraca natychmiast po zapisaniu pliku.
-    Thumbnail generuje się w tle.
+    **Flow:**
+    1. Walidacja pliku (typ, rozmiar)
+    2. Zapis na dysku
+    3. Utworzenie rekordu w bazie
+    4. Zwrócenie response (user widzi sukces natychmiast)
+    5. Generowanie thumbnail w tle (nie blokuje)
 
-    Flow:
-    1. Waliduj plik ⚡
-    2. Zapisz na dysku ⚡
-    3. Zapisz do bazy ⚡
-    4. Zwróć response ✅ (użytkownik widzi sukces!)
-    5. Generuj thumbnail w tle 🎨 (nie blokuje)
+    **Returns:**
+    - 200: Plik przesłany pomyślnie
+    - 400: Błąd walidacji (zły typ, za duży)
+    - 413: Brak miejsca na dysku
+    - 500: Nieoczekiwany błąd
     """
     logger.info(f"Upload from {current_user.username}: {file.filename}")
 
     try:
-        # 1. Waliduj typ
+        # 1. Walidacja typu pliku
         clip_type, extension = validate_file_type(file.content_type)
 
-        # 2. Przeczytaj plik
+        # 2. Odczyt zawartości
         file_content = await file.read()
         file_size = len(file_content)
 
-        # 3. Waliduj rozmiar
+        # 3. Walidacja rozmiaru
         validate_file_size(file_size, clip_type)
 
-        # 4. Wygeneruj nazwę
+        # 4. Generowanie unikalnej nazwy
         unique_filename = generate_unique_filename(file.filename, extension)
 
-        # 5. Sprawdź miejsce
-        from app.services.file_processor import get_storage_directory
+        # 5. Sprawdzenie dostępnego miejsca
         storage_dir = get_storage_directory(clip_type)
         check_disk_space(storage_dir, file_size)
 
-        # 6. Zapisz plik na dysku
+        # 6. Zapis pliku na dysku
         file_path = await save_file_to_disk(file_content, unique_filename, clip_type)
         logger.info(f"File saved: {file_path}")
 
-        # 7. Zapisz do bazy BEZ thumbnails (jeszcze ich nie ma)
+        # 7. Utworzenie rekordu w bazie (bez thumbnails - będą dodane później)
         new_clip = await create_clip_record(
             db=db,
             filename=file.filename,
@@ -103,25 +151,25 @@ async def upload_file(
             file_size=file_size,
             clip_type=clip_type,
             uploader_id=current_user.id,
-            thumbnail_path=None,  # Będzie uzupełnione w tle
+            thumbnail_path=None,
             thumbnail_webp_path=None,
-            metadata=None  # Będzie uzupełnione w tle
+            metadata=None
         )
         logger.info(f"Clip created: ID={new_clip.id}")
 
-        # 8. Zakolejkuj thumbnail w TLE (nie czekamy!)
+        # 8. Zakolejkowanie generowania thumbnail w tle
         background_tasks.add_task(
             process_thumbnail_background,
             clip_id=new_clip.id,
             file_path=str(file_path),
             clip_type=clip_type
         )
-        logger.info(f"Thumbnail queued in background for clip {new_clip.id}")
+        logger.info(f"Thumbnail task queued for clip {new_clip.id}")
 
-        # 9. Invaliduj cache
+        # 9. Invalidacja cache
         await invalidate_clips_cache()
 
-        # 10. Zwróć response NATYCHMIAST
+        # 10. Natychmiastowy response
         return {
             "message": "Plik został przesłany pomyślnie",
             "clip_id": new_clip.id,
@@ -130,9 +178,7 @@ async def upload_file(
             "clip_type": clip_type.value,
             "uploader": current_user.username,
             "created_at": new_clip.created_at.isoformat(),
-
-            # Status thumbnails
-            "thumbnail_status": "processing",  # W trakcie generowania
+            "thumbnail_status": "processing",
             "thumbnail_ready": False,
             "processing_info": "Miniaturka jest generowana w tle"
         }
@@ -148,37 +194,50 @@ async def upload_file(
         )
 
 
+# ============================================================================
+# LIST & DETAIL ENDPOINTS
+# ============================================================================
+
 @router.get("/clips", response_model=ClipListResponse)
 @cache(expire=30, key_builder=cache_key_builder)
 async def list_clips(
-        request: Request,
-        response: Response,
-        page: int = 1,
-        limit: int = 50,
-        sort_by: str = "created_at",
-        sort_order: str = "desc",
-        clip_type: Optional[str] = None,
-        uploader_id: Optional[int] = None,
-        db: Session = Depends(get_db),
-        current_user: User = Depends(get_current_user)
+    request: Request,
+    response: Response,
+    page: int = 1,
+    limit: int = 50,
+    sort_by: str = "created_at",
+    sort_order: str = "desc",
+    clip_type: Optional[str] = None,
+    uploader_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Listowanie klipów z paginacją, sortowaniem i filtrowaniem
 
-    GET /api/files/clips?page=1&limit=50&sort_by=created_at&sort_order=desc&clip_type=video
-    """
+    **Parametry:**
+    - page: Numer strony (min: 1)
+    - limit: Liczba klipów na stronę (1-100)
+    - sort_by: Pole sortowania (created_at, filename, file_size, duration)
+    - sort_order: Kierunek sortowania (asc, desc)
+    - clip_type: Filtrowanie po typie (video, screenshot)
+    - uploader_id: Filtrowanie po uploaderze
 
-    # Walidacja parametrów
+    **Returns:**
+    - Lista klipów z metadanymi
+    - Prefetch hints dla miniatur (HTTP/2)
+    """
+    # Walidacja i normalizacja parametrów
     page = max(1, page)
     limit = min(max(1, limit), 100)
     offset = (page - 1) * limit
 
-    # Query z optymalizacją
+    # Bazowe query z optymalizacją
     query = db.query(Clip).options(
         selectinload(Clip.awards).selectinload(Award.user)
     ).filter(Clip.is_deleted == False)
 
-    # Filtrowanie
+    # Filtrowanie po typie klipa
     if clip_type:
         try:
             filter_type = ClipType(clip_type.lower())
@@ -208,29 +267,45 @@ async def list_clips(
         )
 
     sort_field = allowed_sort_fields[sort_by]
-    query = query.order_by(asc(sort_field) if sort_order.lower() == "asc" else desc(sort_field))
+    query = query.order_by(
+        asc(sort_field) if sort_order.lower() == "asc" else desc(sort_field)
+    )
 
-    # Paginacja
+    # Paginacja i wykonanie query
     total = query.count()
     clips = query.offset(offset).limit(limit).all()
 
-    # Pobierz AwardTypes
-    all_award_names = {award.award_name for clip in clips for award in clip.awards}
-    award_types = db.query(AwardType).filter(AwardType.name.in_(all_award_names)).all() if all_award_names else []
+    # Pobierz typy nagród (batch query)
+    all_award_names = {
+        award.award_name
+        for clip in clips
+        for award in clip.awards
+    }
+    award_types = []
+    if all_award_names:
+        award_types = db.query(AwardType).filter(
+            AwardType.name.in_(all_award_names)
+        ).all()
     award_types_map = {at.name: at for at in award_types}
 
-    # Konwertuj do response
+    # Przygotowanie response
     clips_response = []
+    prefetch_candidates = []
+
     for clip in clips:
+        # Agregacja nagród
         award_counts = {}
         for award in clip.awards:
             award_counts[award.award_name] = award_counts.get(award.award_name, 0) + 1
 
+        # Przygotowanie ikon nagród
         award_icons = []
         for award_name, count in award_counts.items():
             award_type = award_types_map.get(award_name)
-            icon_url = f"/api/admin/award-types/{award_type.id}/icon" if (
-                    award_type and award_type.custom_icon_path) else None
+            icon_url = None
+
+            if award_type and award_type.custom_icon_path:
+                icon_url = f"/api/admin/award-types/{award_type.id}/icon"
 
             award_icons.append({
                 "award_name": award_name,
@@ -239,6 +314,19 @@ async def list_clips(
                 "lucide_icon": award_type.lucide_icon if award_type else None,
                 "count": count
             })
+
+        # Prefetch tylko jeśli plik FAKTYCZNIE istnieje
+        thumbnail_ready = False
+        if clip.thumbnail_webp_path:
+            webp_path = Path(clip.thumbnail_webp_path)
+            if webp_path.exists() and webp_path.stat().st_size > 0:
+                thumbnail_ready = True
+                prefetch_candidates.append(f"/api/files/thumbnails/{clip.id}")
+        elif clip.thumbnail_path:
+            jpeg_path = Path(clip.thumbnail_path)
+            if jpeg_path.exists() and jpeg_path.stat().st_size > 0:
+                thumbnail_ready = True
+                prefetch_candidates.append(f"/api/files/thumbnails/{clip.id}")
 
         clips_response.append(ClipResponse(
             id=clip.id,
@@ -253,24 +341,21 @@ async def list_clips(
             uploader_username=clip.uploader.username,
             uploader_id=clip.uploader_id,
             award_count=clip.award_count,
-            has_thumbnail=clip.thumbnail_path is not None,
-            has_webp_thumbnail=clip.thumbnail_webp_path is not None,
+            has_thumbnail=thumbnail_ready,
+            has_webp_thumbnail=clip.thumbnail_webp_path is not None and Path(clip.thumbnail_webp_path).exists(),
             award_icons=award_icons
         ))
 
     pages = (total + limit - 1) // limit
 
-    # HTTP/2 Server Push
-    if clips_response:
-        link_headers = []
-        for clip_resp in clips_response[:5]:
-            if clip_resp.has_thumbnail:
-                thumbnail_url = f"/api/files/thumbnails/{clip_resp.id}"
-                img_type = "image/webp" if clip_resp.has_webp_thumbnail else "image/jpeg"
-                link_headers.append(f'<{thumbnail_url}>; rel=preload; as=image; type={img_type}')
-
-        if link_headers:
-            response.headers["Link"] = ", ".join(link_headers)
+    # Resource Hints: prefetch thumbnails (HTTP/2)
+    # Używamy rel=prefetch zamiast rel=preload aby uniknąć ostrzeżeń w konsoli
+    if prefetch_candidates:
+        link_headers = [
+            f'<{url}>; rel=prefetch'
+            for url in prefetch_candidates[:5]  # Max 5 prefetches
+        ]
+        response.headers["Link"] = ", ".join(link_headers)
 
     return ClipListResponse(
         clips=clips_response,
@@ -284,14 +369,19 @@ async def list_clips(
 @router.get("/clips/{clip_id}", response_model=ClipDetailResponse)
 @cache(expire=300, key_builder=cache_key_builder)
 async def get_clip(
-        request: Request,
-        clip_id: int,
-        db: Session = Depends(get_db),
-        current_user: User = Depends(get_current_user)
+    request: Request,
+    clip_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
-    """Szczegóły klipa - bez zmian"""
-    from sqlalchemy.orm import joinedload
+    """
+    Szczegóły pojedynczego klipa
 
+    **Returns:**
+    - Pełne informacje o klipie
+    - Lista wszystkich nagród z użytkownikami
+    - URLe do thumbnails i downloadu
+    """
     clip = db.query(Clip).options(
         joinedload(Clip.uploader),
         joinedload(Clip.awards).joinedload(Award.user)
@@ -303,6 +393,7 @@ async def get_clip(
     if not clip:
         raise NotFoundError(resource="Klip", resource_id=clip_id)
 
+    # Przygotowanie listy nagród
     awards_info = [
         {
             "id": award.id,
@@ -336,13 +427,27 @@ async def get_clip(
     )
 
 
+# ============================================================================
+# DOWNLOAD ENDPOINTS
+# ============================================================================
+
 @router.get("/download/{clip_id}")
 async def download_clip(
-        clip_id: int,
-        db: Session = Depends(get_db),
-        current_user: User = Depends(get_current_user_flexible)
+    clip_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_flexible)
 ):
-    """Pobierz plik — bez zmian"""
+    """
+    Pobieranie pojedynczego pliku
+
+    **Autoryzacja:**
+    - Token JWT (preferred)
+    - Query param token (fallback)
+
+    **Returns:**
+    - FileResponse z odpowiednim Content-Type
+    - Accept-Ranges dla video streaming
+    """
     clip = db.query(Clip).filter(
         Clip.id == clip_id,
         Clip.is_deleted == False
@@ -352,11 +457,16 @@ async def download_clip(
         raise NotFoundError(resource="Klip", resource_id=clip_id)
 
     if not can_access_clip(clip, current_user):
-        raise AuthorizationError(message="Nie masz uprawnień do pobrania tego pliku")
+        raise AuthorizationError(
+            message="Nie masz uprawnień do pobrania tego pliku"
+        )
 
     file_path = Path(clip.file_path)
     if not file_path.exists():
-        raise StorageError(message="Plik nie został znaleziony", path=str(file_path))
+        raise StorageError(
+            message="Plik nie został znaleziony",
+            path=str(file_path)
+        )
 
     media_type = "video/mp4" if clip.clip_type == ClipType.VIDEO else "image/png"
 
@@ -371,59 +481,51 @@ async def download_clip(
     )
 
 
-class BulkDownloadRequest(BaseModel):
-    clip_ids: List[int] = Field(..., min_length=1, max_length=50)
-
-
-class BulkActionType(str, Enum):
-    DELETE = "delete"
-    ADD_TAGS = "add-tags"
-    ADD_TO_SESSION = "add-to-session"
-
-
-class BulkActionRequest(BaseModel):
-    clip_ids: List[int] = Field(..., min_length=1, max_length=100, description="Lista ID klipów (1-100)")
-    action: BulkActionType = Field(..., description="Typ akcji do wykonania")
-    tags: List[str] = Field(default=[], max_length=10, description="Tagi (dla add-tags)")
-    session_name: str = Field(default="", max_length=100, description="Nazwa sesji (dla add-to-session)")
-
-
-class BulkActionResponse(BaseModel):
-    success: bool
-    action: str
-    processed: int
-    failed: int
-    message: str
-    details: dict = {}
-
-
 @router.post("/download-bulk")
 async def download_bulk(
-        request: BulkDownloadRequest,
-        db: Session = Depends(get_db),
-        current_user: User = Depends(get_current_user)
+    request: BulkDownloadRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
-    Bulk download — pobiera wiele klipów jako ZIP
+    Bulk download - pobieranie wielu klipów jako ZIP
 
-    POST /api/files/download-bulk
-    Body: { "clip_ids": [1, 2, 3] }
+    **Limity:**
+    - Max 50 klipów na raz
+    - Max 1GB total size
+
+    **Returns:**
+    - StreamingResponse z archiwum ZIP
     """
     clip_ids = request.clip_ids
 
     if len(clip_ids) > 50:
-        raise ValidationError(message="Zbyt wiele plików - maksymalnie 50 naraz", field="clip_ids")
+        raise ValidationError(
+            message="Zbyt wiele plików - maksymalnie 50 naraz",
+            field="clip_ids"
+        )
 
-    clips = db.query(Clip).filter(Clip.id.in_(clip_ids), Clip.is_deleted == False).all()
+    # Pobranie klipów
+    clips = db.query(Clip).filter(
+        Clip.id.in_(clip_ids),
+        Clip.is_deleted == False
+    ).all()
 
     if not clips:
         raise NotFoundError(resource="Klipy", resource_id=None)
 
-    accessible_clips = [clip for clip in clips if can_access_clip(clip, current_user)]
+    # Sprawdzenie uprawnień
+    accessible_clips = [
+        clip for clip in clips
+        if can_access_clip(clip, current_user)
+    ]
 
     if not accessible_clips:
-        raise AuthorizationError(message="Nie masz dostępu do żadnego z wybranych plików")
+        raise AuthorizationError(
+            message="Nie masz dostępu do żadnego z wybranych plików"
+        )
 
+    # Sprawdzenie istnienia plików i rozmiaru
     existing_clips = []
     total_size = 0
 
@@ -434,18 +536,27 @@ async def download_bulk(
             total_size += clip.file_size
 
     if not existing_clips:
-        raise StorageError(message="Żaden z plików nie został znaleziony na dysku")
+        raise StorageError(
+            message="Żaden z plików nie został znaleziony na dysku"
+        )
 
-    MAX_TOTAL_SIZE = 1 * 1024 * 1024 * 1024  # 1GB limit
+    # Limit rozmiaru (1GB)
+    MAX_TOTAL_SIZE = 1 * 1024 * 1024 * 1024
     if total_size > MAX_TOTAL_SIZE:
-        raise ValidationError(message=f"Całkowity rozmiar przekracza limit: {total_size / (1024 ** 3):.2f}GB")
+        raise ValidationError(
+            message=f"Całkowity rozmiar przekracza limit: {total_size / (1024 ** 3):.2f}GB"
+        )
 
+    # Generator ZIP
     async def zip_generator():
         buffer = io.BytesIO()
         with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
             for clip in existing_clips:
                 try:
-                    zip_file.write(Path(clip.file_path), arcname=f"{clip.id}_{clip.filename}")
+                    zip_file.write(
+                        Path(clip.file_path),
+                        arcname=f"{clip.id}_{clip.filename}"
+                    )
                 except OSError as e:
                     logger.error(f"Failed to add file to ZIP: {e}")
 
@@ -460,38 +571,35 @@ async def download_bulk(
     return StreamingResponse(
         zip_generator(),
         media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="tamteklipy_{timestamp}.zip"'}
+        headers={
+            "Content-Disposition": f'attachment; filename="tamteklipy_{timestamp}.zip"'
+        }
     )
 
 
+# ============================================================================
+# BULK ACTIONS
+# ============================================================================
+
 @router.post("/clips/bulk-action", response_model=BulkActionResponse)
 async def bulk_action(
-        request: BulkActionRequest,
-        db: Session = Depends(get_db),
-        current_user: User = Depends(get_current_user)
+    request: BulkActionRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Masowa operacja na klipach
 
-    Dostępne akcje:
+    **Dostępne akcje:**
     - **delete**: usuń zaznaczone klipy (soft delete)
-    - **add-tags**: dodaj tagi do klipów (TODO - wymaga modelu Tag)
-    - **add-to-session**: dodaj do sesji (TODO - wymaga modelu Session)
+    - **add-tags**: dodaj tagi (TODO)
+    - **add-to-session**: dodaj do sesji (TODO)
 
     **Limity:**
-    - Maksymalnie 100 klipów na raz
-    - Maksymalnie 10 tagów
-    - Tylko właściciel lub admin może usuwać klipy
-
-    **Przykład:**
-    ```json
-    {
-      "clip_ids": [1, 2, 3, 4, 5],
-      "action": "delete"
-    }
-    ```
+    - Max 100 klipów na raz
+    - Max 10 tagów
+    - Tylko właściciel lub admin może usuwać
     """
-
     if not request.clip_ids:
         raise ValidationError(
             message="Nie wybrano żadnych klipów",
@@ -510,248 +618,7 @@ async def bulk_action(
         f"by user {current_user.username}"
     )
 
-    # === DELETE ACTION ===
-    if request.action == BulkActionType.DELETE:
-        processed = 0
-        failed = 0
-        errors = []
-
-        for clip_id in request.clip_ids:
-            try:
-                clip = db.query(Clip).filter(
-                    Clip.id == clip_id,
-                    Clip.is_deleted == False
-                ).first()
-
-                if not clip:
-                    failed += 1
-                    errors.append(f"Klip {clip_id} nie istnieje")
-                    continue
-
-                # Sprawdź uprawnienia
-                if clip.uploader_id != current_user.id and not current_user.is_admin:
-                    failed += 1
-                    errors.append(f"Brak uprawnień do usunięcia klipu {clip_id}")
-                    continue
-
-                # Soft delete
-                clip.is_deleted = True
-                processed += 1
-
-            except Exception as e:
-                logger.error(f"Failed to delete clip {clip_id}: {e}")
-                failed += 1
-                errors.append(f"Błąd podczas usuwania klipu {clip_id}: {str(e)}")
-
-        try:
-            db.commit()
-            await invalidate_clips_cache()
-            logger.info(f"Bulk delete completed: {processed} processed, {failed} failed")
-        except Exception as e:
-            db.rollback()
-            logger.error(f"Failed to commit bulk delete: {e}")
-            raise StorageError(
-                message="Nie udało się zapisać zmian w bazie danych",
-                path="database"
-            )
-
-        success = failed == 0
-        message = f"Usunięto {processed} klipów"
-
-        if not success and processed == 0:
-            message = "Nie udało się usunąć żadnego klipu"
-        elif failed > 0:
-            message += f" (błędów: {failed})"
-
-        return BulkActionResponse(
-            success=success,
-            action=request.action.value,
-            processed=processed,
-            failed=failed,
-            message=message,
-            details={
-                "errors": errors if errors else None,
-                "total_requested": len(request.clip_ids)
-            }
-        )
-
-    # === ADD TAGS ACTION (TODO) ===
-    elif request.action == BulkActionType.ADD_TAGS:
-        if not request.tags:
-            raise ValidationError(
-                message="Nie podano tagów do dodania",
-                field="tags"
-            )
-
-        logger.warning("Add tags action not implemented yet")
-
-        return BulkActionResponse(
-            success=False,
-            action=request.action.value,
-            processed=0,
-            failed=len(request.clip_ids),
-            message="Funkcja dodawania tagów nie jest jeszcze zaimplementowana",
-            details={
-                "note": "Wymaga implementacji modelu Tag",
-                "requested_tags": request.tags
-            }
-        )
-
-    # === ADD TO SESSION ACTION (TODO) ===
-    elif request.action == BulkActionType.ADD_TO_SESSION:
-        if not request.session_name:
-            raise ValidationError(
-                message="Nie podano nazwy sesji",
-                field="session_name"
-            )
-
-        logger.warning("Add to session action not implemented yet")
-
-        return BulkActionResponse(
-            success=False,
-            action=request.action.value,
-            processed=0,
-            failed=len(request.clip_ids),
-            message="Funkcja dodawania do sesji nie jest jeszcze zaimplementowana",
-            details={
-                "note": "Wymaga implementacji modelu Session",
-                "requested_session": request.session_name
-            }
-        )
-
-    # === UNKNOWN ACTION ===
-    else:
-        raise ValidationError(
-            message=f"Nieznana akcja: {request.action}",
-            field="action",
-            details={
-                "provided": request.action,
-                "allowed": [a.value for a in BulkActionType]
-            }
-        )
-
-
-async def bulk_action_delete(
-        clip_ids: List[int],
-        db: Session,
-        current_user: User
-) -> dict:
-    """Masowe usuwanie klipów"""
-    processed = 0
-    failed = 0
-    errors = []
-
-    for clip_id in clip_ids:
-        try:
-            clip = db.query(Clip).filter(
-                Clip.id == clip_id,
-                Clip.is_deleted == False
-            ).first()
-
-            if not clip:
-                failed += 1
-                errors.append(f"Klip {clip_id} nie istnieje")
-                continue
-
-            # Sprawdź uprawnienia (tylko właściciel lub admin)
-            if clip.uploader_id != current_user.id and not current_user.is_admin:
-                failed += 1
-                errors.append(f"Brak uprawnień do usunięcia klipu {clip_id}")
-                continue
-
-            # Soft delete
-            clip.is_deleted = True
-            processed += 1
-
-        except Exception as e:
-            logger.error(f"Failed to delete clip {clip_id}: {e}")
-            failed += 1
-            errors.append(f"Błąd podczas usuwania klipu {clip_id}")
-
-    try:
-        db.commit()
-        await invalidate_clips_cache()
-    except Exception as e:
-        db.rollback()
-        logger.error(f"Failed to commit bulk delete: {e}")
-        raise HTTPException(status_code=500, detail="Nie udało się zapisać zmian")
-
-    return {
-        "processed": processed,
-        "failed": failed,
-        "errors": errors if errors else None
-    }
-
-
-async def bulk_action_add_tags(
-        clip_ids: List[int],
-        tags: List[str],
-        db: Session,
-        current_user: User
-) -> dict:
-    """Masowe dodawanie tagów (placeholder - wymaga modelu Tag)"""
-    # TODO: Implementacja po dodaniu modelu Tag
-    logger.warning("Add tags not implemented yet")
-    return {
-        "processed": 0,
-        "failed": len(clip_ids),
-        "errors": ["Funkcja dodawania tagów nie jest jeszcze zaimplementowana"]
-    }
-
-
-async def bulk_action_add_to_session(
-        clip_ids: List[int],
-        session_name: str,
-        db: Session,
-        current_user: User
-) -> dict:
-    """Masowe dodawanie do sesji (placeholder - wymaga modelu Session)"""
-    # TODO: Implementacja po dodaniu modelu Session
-    logger.warning("Add to session not implemented yet")
-    return {
-        "processed": 0,
-        "failed": len(clip_ids),
-        "errors": ["Funkcja dodawania do sesji nie jest jeszcze zaimplementowana"]
-    }
-
-
-@router.post("/clips/bulk-action", response_model=BulkActionResponse)
-async def bulk_action(
-        request: BulkActionRequest,
-        db: Session = Depends(get_db),
-        current_user: User = Depends(get_current_user)
-):
-    """
-    Masowa operacja na klipach
-
-    Dostępne akcje:
-    - delete: usuń zaznaczone klipy (soft delete)
-    - add-tags: dodaj tagi do klipów (TODO)
-    - add-to-session: dodaj do sesji (TODO)
-
-    Limits:
-    - max 100 klipów na raz
-    - max 10 tagów
-    """
-
-    if not request.clip_ids:
-        raise ValidationError(
-            message="Nie wybrano żadnych klipów",
-            field="clip_ids"
-        )
-
-    if len(request.clip_ids) > 100:
-        raise ValidationError(
-            message="Zbyt wiele klipów - maksymalnie 100 na raz",
-            field="clip_ids"
-        )
-
-    logger.info(
-        f"Bulk action: {request.action} on {len(request.clip_ids)} clips "
-        f"by user {current_user.username}"
-    )
-
-    # Wykonaj akcję
+    # Routing do odpowiedniej akcji
     if request.action == BulkActionType.DELETE:
         result = await bulk_action_delete(request.clip_ids, db, current_user)
         message = f"Usunięto {result['processed']} klipów"
@@ -781,10 +648,14 @@ async def bulk_action(
     else:
         raise ValidationError(
             message=f"Nieznana akcja: {request.action}",
-            field="action"
+            field="action",
+            details={
+                "provided": request.action,
+                "allowed": [a.value for a in BulkActionType]
+            }
         )
 
-    # Zwróć response
+    # Przygotowanie odpowiedzi
     success = result['failed'] == 0
 
     if not success and result['processed'] == 0:
@@ -805,14 +676,131 @@ async def bulk_action(
     )
 
 
+async def bulk_action_delete(
+    clip_ids: List[int],
+    db: Session,
+    current_user: User
+) -> dict:
+    """
+    Masowe usuwanie klipów (soft delete)
+
+    **Uprawnienia:**
+    - Właściciel może usunąć swoje klipy
+    - Admin może usunąć wszystkie klipy
+    """
+    processed = 0
+    failed = 0
+    errors = []
+
+    for clip_id in clip_ids:
+        try:
+            clip = db.query(Clip).filter(
+                Clip.id == clip_id,
+                Clip.is_deleted == False
+            ).first()
+
+            if not clip:
+                failed += 1
+                errors.append(f"Klip {clip_id} nie istnieje")
+                continue
+
+            # Sprawdzenie uprawnień
+            if clip.uploader_id != current_user.id and not current_user.is_admin:
+                failed += 1
+                errors.append(f"Brak uprawnień do usunięcia klipu {clip_id}")
+                continue
+
+            # Soft delete
+            clip.is_deleted = True
+            processed += 1
+
+        except Exception as e:
+            logger.error(f"Failed to delete clip {clip_id}: {e}")
+            failed += 1
+            errors.append(f"Błąd podczas usuwania klipu {clip_id}: {str(e)}")
+
+    # Commit zmian
+    try:
+        db.commit()
+        await invalidate_clips_cache()
+        logger.info(f"Bulk delete completed: {processed} processed, {failed} failed")
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to commit bulk delete: {e}")
+        raise StorageError(
+            message="Nie udało się zapisać zmian w bazie danych",
+            path="database"
+        )
+
+    return {
+        "processed": processed,
+        "failed": failed,
+        "errors": errors if errors else None
+    }
+
+
+async def bulk_action_add_tags(
+    clip_ids: List[int],
+    tags: List[str],
+    db: Session,
+    current_user: User
+) -> dict:
+    """
+    Masowe dodawanie tagów (placeholder - wymaga modelu Tag)
+
+    TODO: Implementacja po dodaniu modelu Tag
+    """
+    logger.warning("Add tags action not implemented yet")
+    return {
+        "processed": 0,
+        "failed": len(clip_ids),
+        "errors": ["Funkcja dodawania tagów nie jest jeszcze zaimplementowana"]
+    }
+
+
+async def bulk_action_add_to_session(
+    clip_ids: List[int],
+    session_name: str,
+    db: Session,
+    current_user: User
+) -> dict:
+    """
+    Masowe dodawanie do sesji (placeholder - wymaga modelu Session)
+
+    TODO: Implementacja po dodaniu modelu Session
+    """
+    logger.warning("Add to session action not implemented yet")
+    return {
+        "processed": 0,
+        "failed": len(clip_ids),
+        "errors": ["Funkcja dodawania do sesji nie jest jeszcze zaimplementowana"]
+    }
+
+
+# ============================================================================
+# THUMBNAIL ENDPOINTS
+# ============================================================================
+
 @router.get("/thumbnails/{clip_id}")
 async def get_thumbnail(
-        clip_id: int,
-        request: Request,
-        db: Session = Depends(get_db),
-        current_user: User = Depends(get_current_user_flexible)
+    clip_id: int,
+    request: Request,
+    db: Session = Depends(get_db)
 ):
-    """Pobierz thumbnail - bez zmian"""
+    """
+    Pobieranie thumbnail (endpoint publiczny)
+
+    **WebP Support:**
+    - Sprawdza Accept header
+    - Zwraca WebP jeśli dostępne i wspierane
+    - Fallback do JPEG
+
+    **Cache:**
+    - Cache-Control: public, max-age=3600
+
+    **Uwaga:**
+    Endpoint publiczny (bez autoryzacji) aby umożliwić prefetch przez przeglądarkę
+    """
     clip = db.query(Clip).filter(
         Clip.id == clip_id,
         Clip.is_deleted == False
@@ -824,10 +812,11 @@ async def get_thumbnail(
     if not clip.thumbnail_path:
         raise NotFoundError(resource="Thumbnail dla klipa", resource_id=clip_id)
 
-    # Sprawdź WebP support
+    # Sprawdź wsparcie WebP
     accept_header = request.headers.get("accept", "")
     supports_webp = "image/webp" in accept_header
 
+    # Spróbuj zwrócić WebP jeśli wspierane i dostępne
     if supports_webp and clip.thumbnail_webp_path:
         thumbnail_path = Path(clip.thumbnail_webp_path)
         media_type = "image/webp"
@@ -843,7 +832,7 @@ async def get_thumbnail(
     thumbnail_path = Path(clip.thumbnail_path)
 
     if not thumbnail_path.exists():
-        raise StorageError(message="Thumbnail nie został znaleziony", path=str(thumbnail_path))
+        raise NotFoundError(resource="Thumbnail dla klipa", resource_id=clip_id)
 
     return FileResponse(
         path=str(thumbnail_path),
@@ -854,19 +843,22 @@ async def get_thumbnail(
 
 @router.get("/clips/{clip_id}/thumbnail-status")
 async def get_thumbnail_status(
-        clip_id: int,
-        db: Session = Depends(get_db),
-        current_user: User = Depends(get_current_user)
+    clip_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
-    Sprawdź status generowania thumbnails
+    Sprawdzenie statusu generowania thumbnail
 
-    GET /api/files/clips/{clip_id}/thumbnail-status
-
-    Użycie na frontendzie:
+    **Użycie:**
+    - Polling co 1-2 sekundy po uploaddzie
     - Pokazuj spinner podczas processing
-    - Poll co 1-2 sekundy
     - Gdy ready=true, odśwież thumbnail
+
+    **Statusy:**
+    - pending: Oczekuje na przetworzenie
+    - processing: Generowanie w trakcie
+    - ready: Thumbnail gotowy
     """
     clip = db.query(Clip).filter(
         Clip.id == clip_id,
@@ -874,9 +866,9 @@ async def get_thumbnail_status(
     ).first()
 
     if not clip:
-        raise ValidationError(message="Klip nie istnieje", field="clip_id")
+        raise NotFoundError(resource="Klip", resource_id=clip_id)
 
-    # Sprawdź czy thumbnail jest gotowy
+    # Określ status
     has_thumbnail = clip.thumbnail_path is not None
     has_webp = clip.thumbnail_webp_path is not None
     has_metadata = clip.duration is not None or clip.width is not None
@@ -906,14 +898,35 @@ async def get_thumbnail_status(
     }
 
 
+# ============================================================================
+# VIDEO STREAMING ENDPOINT
+# ============================================================================
+
 @router.get("/stream/{clip_id}")
 async def stream_video(
-        clip_id: int,
-        request: Request,
-        db: Session = Depends(get_db),
-        current_user: User = Depends(get_current_user_flexible)
+    clip_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_flexible)
 ):
-    """Stream video z Range requests - bez zmian"""
+    """
+    Streaming video z obsługą Range requests (HTTP 206)
+
+    **Range Requests:**
+    - Umożliwia seeking w video
+    - Oszczędza bandwidth
+    - Required dla <video> tag w przeglądarce
+
+    **Headers:**
+    - Accept-Ranges: bytes
+    - Content-Range: bytes start-end/total
+    - Content-Length: chunk size
+
+    **Returns:**
+    - 200: Full file (bez Range header)
+    - 206: Partial content (z Range header)
+    - 416: Range not satisfiable
+    """
     clip = db.query(Clip).filter(
         Clip.id == clip_id,
         Clip.is_deleted == False,
@@ -923,24 +936,35 @@ async def stream_video(
     if not clip:
         raise NotFoundError(resource="Video klip", resource_id=clip_id)
 
+    if not can_access_clip(clip, current_user):
+        raise AuthorizationError(
+            message="Nie masz uprawnień do odtworzenia tego pliku"
+        )
+
     file_path = Path(clip.file_path)
 
     if not file_path.exists():
-        raise StorageError(message="Plik nie został znaleziony", path=str(file_path))
+        raise StorageError(
+            message="Plik nie został znaleziony",
+            path=str(file_path)
+        )
 
     file_size = file_path.stat().st_size
     range_header = request.headers.get("range")
 
+    # Jeśli brak Range header, zwróć cały plik
     if not range_header:
         return FileResponse(
             path=str(file_path),
             media_type="video/mp4",
             headers={
                 "Accept-Ranges": "bytes",
-                "Content-Length": str(file_size)
+                "Content-Length": str(file_size),
+                "Cache-Control": "public, max-age=3600"
             }
         )
 
+    # Parsowanie Range header
     try:
         range_str = range_header.replace("bytes=", "")
         start_str, end_str = range_str.split("-")
@@ -948,25 +972,28 @@ async def stream_video(
         start = int(start_str) if start_str else 0
         end = int(end_str) if end_str else file_size - 1
 
+        # Walidacja zakresu
         if start >= file_size or end >= file_size or start > end:
             raise ValueError("Invalid range")
 
         chunk_size = end - start + 1
 
-    except (ValueError, AttributeError):
+    except (ValueError, AttributeError) as e:
+        logger.warning(f"Invalid Range header: {range_header}")
         raise ValidationError(
             message="Nieprawidłowy header Range",
             field="Range",
-            details={"range": range_header}
+            details={"range": range_header, "error": str(e)}
         )
 
+    # Generator dla streaming
     async def file_iterator():
         async with aiofiles.open(file_path, mode='rb') as f:
             await f.seek(start)
             remaining = chunk_size
 
             while remaining > 0:
-                read_size = min(8192, remaining)
+                read_size = min(8192, remaining)  # 8KB chunks
                 data = await f.read(read_size)
 
                 if not data:
@@ -975,6 +1002,7 @@ async def stream_video(
                 remaining -= len(data)
                 yield data
 
+    # Zwróć partial content (HTTP 206)
     return StreamingResponse(
         file_iterator(),
         status_code=206,
@@ -986,3 +1014,202 @@ async def stream_video(
             "Cache-Control": "public, max-age=3600"
         }
     )
+
+
+# ============================================================================
+# HEALTH CHECK & DIAGNOSTICS
+# ============================================================================
+
+@router.get("/health")
+async def health_check(db: Session = Depends(get_db)):
+    """
+    Health check endpoint dla monitorowania
+
+    **Sprawdza:**
+    - Połączenie z bazą danych
+    - Dostępność storage directories
+    - Podstawowe statystyki
+
+    **Returns:**
+    - 200: System działa prawidłowo
+    - 503: System ma problemy
+    """
+    try:
+        # Sprawdź połączenie z bazą
+        total_clips = db.query(Clip).filter(Clip.is_deleted == False).count()
+
+        # Sprawdź storage directories
+        from app.services.file_processor import get_storage_directory
+        video_dir = get_storage_directory(ClipType.VIDEO)
+        screenshot_dir = get_storage_directory(ClipType.SCREENSHOT)
+
+        storage_ok = video_dir.exists() and screenshot_dir.exists()
+
+        # Sprawdź dostępne miejsce
+        import shutil
+        video_space = shutil.disk_usage(video_dir)
+        free_gb = video_space.free / (1024 ** 3)
+
+        return {
+            "status": "healthy",
+            "database": "connected",
+            "storage": "available" if storage_ok else "unavailable",
+            "total_clips": total_clips,
+            "free_space_gb": round(free_gb, 2),
+            "timestamp": datetime.now().isoformat()
+        }
+
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        return {
+            "status": "unhealthy",
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
+
+# ============================================================================
+# ADMIN ENDPOINTS (Optional)
+# ============================================================================
+
+@router.delete("/clips/{clip_id}/hard-delete")
+async def hard_delete_clip(
+    clip_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Hard delete - trwałe usunięcie klipu i pliku z dysku
+
+    **Uwaga:** Ta operacja jest nieodwracalna!
+
+    **Uprawnienia:** Tylko admin
+
+    **Usuwa:**
+    - Rekord z bazy danych
+    - Plik wideo/screenshot
+    - Thumbnail (JPEG i WebP)
+    - Wszystkie powiązane nagrody
+    """
+    if not current_user.is_admin:
+        raise AuthorizationError(
+            message="Tylko admin może wykonać hard delete"
+        )
+
+    clip = db.query(Clip).filter(Clip.id == clip_id).first()
+
+    if not clip:
+        raise NotFoundError(resource="Klip", resource_id=clip_id)
+
+    files_to_delete = []
+
+    # Zbierz ścieżki do plików
+    if clip.file_path:
+        files_to_delete.append(Path(clip.file_path))
+    if clip.thumbnail_path:
+        files_to_delete.append(Path(clip.thumbnail_path))
+    if clip.thumbnail_webp_path:
+        files_to_delete.append(Path(clip.thumbnail_webp_path))
+
+    # Usuń pliki z dysku
+    deleted_files = []
+    failed_files = []
+
+    for file_path in files_to_delete:
+        try:
+            if file_path.exists():
+                file_path.unlink()
+                deleted_files.append(str(file_path))
+                logger.info(f"Deleted file: {file_path}")
+        except Exception as e:
+            logger.error(f"Failed to delete file {file_path}: {e}")
+            failed_files.append(str(file_path))
+
+    # Usuń rekord z bazy (cascade usuwa też awards)
+    try:
+        db.delete(clip)
+        db.commit()
+        await invalidate_clips_cache()
+        logger.info(f"Hard deleted clip {clip_id} by {current_user.username}")
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to delete clip from database: {e}")
+        raise StorageError(
+            message="Nie udało się usunąć klipu z bazy danych",
+            path="database"
+        )
+
+    return {
+        "message": f"Klip {clip_id} został trwale usunięty",
+        "clip_id": clip_id,
+        "deleted_files": deleted_files,
+        "failed_files": failed_files if failed_files else None
+    }
+
+
+@router.post("/clips/{clip_id}/regenerate-thumbnail")
+async def regenerate_thumbnail(
+    clip_id: int,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Regeneracja thumbnail dla klipa
+
+    **Użycie:**
+    - Gdy thumbnail się nie wygenerował
+    - Gdy thumbnail jest uszkodzony
+    - Gdy chcesz zaktualizować miniaturkę
+
+    **Uprawnienia:** Właściciel lub admin
+    """
+    clip = db.query(Clip).filter(
+        Clip.id == clip_id,
+        Clip.is_deleted == False
+    ).first()
+
+    if not clip:
+        raise NotFoundError(resource="Klip", resource_id=clip_id)
+
+    # Sprawdź uprawnienia
+    if clip.uploader_id != current_user.id and not current_user.is_admin:
+        raise AuthorizationError(
+            message="Nie masz uprawnień do regeneracji thumbnail"
+        )
+
+    # Usuń stare thumbnails
+    if clip.thumbnail_path:
+        try:
+            Path(clip.thumbnail_path).unlink(missing_ok=True)
+        except Exception as e:
+            logger.warning(f"Failed to delete old thumbnail: {e}")
+
+    if clip.thumbnail_webp_path:
+        try:
+            Path(clip.thumbnail_webp_path).unlink(missing_ok=True)
+        except Exception as e:
+            logger.warning(f"Failed to delete old WebP thumbnail: {e}")
+
+    # Wyczyść thumbnail paths w bazie
+    clip.thumbnail_path = None
+    clip.thumbnail_webp_path = None
+    db.commit()
+
+    # Zakolejkuj nowe generowanie
+    background_tasks.add_task(
+        process_thumbnail_background,
+        clip_id=clip.id,
+        file_path=str(clip.file_path),
+        clip_type=clip.clip_type
+    )
+
+    await invalidate_clips_cache()
+
+    logger.info(f"Thumbnail regeneration queued for clip {clip_id}")
+
+    return {
+        "message": "Regeneracja thumbnail została zakolejkowana",
+        "clip_id": clip_id,
+        "status": "processing"
+    }

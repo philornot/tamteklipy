@@ -32,10 +32,10 @@ def check_database_exists():
     missing_tables = [t for t in required_tables if t not in tables]
 
     if missing_tables:
-        logger.error(f"Brakujące tabele: {', '.join(missing_tables)}")
-        logger.error("\nRozwiązanie:")
-        logger.error("   python hard_reset.py")
-        logger.error("   python seed_database.py --clear")
+        logger.warning(f"Brakujące tabele: {', '.join(missing_tables)}")
+        logger.warning("\nRozwiązanie:")
+        logger.warning("   python hard_reset.py")
+        logger.warning("   python seed_database.py --clear")
         return False
 
     return True
@@ -375,7 +375,7 @@ def main(clear_first=False):
 
     # Sprawdź czy baza istnieje
     if not check_database_exists():
-        logger.error("\nBaza danych nie istnieje lub jest niepełna!")
+        logger.warning("\nBaza danych nie istnieje lub jest niepełna!")
         return
 
     db = SessionLocal()
@@ -396,7 +396,7 @@ def main(clear_first=False):
         logger.info("Seedowanie zakończone pomyślnie!")
 
     except Exception as e:
-        logger.error(f"Błąd podczas seedowania: {e}")
+        logger.warning(f"Błąd podczas seedowania: {e}")
         db.rollback()
         raise
     finally:

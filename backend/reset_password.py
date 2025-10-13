@@ -32,7 +32,7 @@ def reset_password(username: str, new_password: str):
         user = db.query(User).filter(User.username == username).first()
 
         if not user:
-            logger.error(f"Użytkownik '{username}' nie istnieje!")
+            logger.warning(f"Użytkownik '{username}' nie istnieje!")
             logger.info("\nDostępni użytkownicy:")
             all_users = db.query(User).all()
             for u in all_users:
@@ -58,7 +58,7 @@ def reset_password(username: str, new_password: str):
         return True
 
     except Exception as e:
-        logger.error(f"Błąd podczas resetowania hasła: {e}")
+        logger.warning(f"Błąd podczas resetowania hasła: {e}")
         db.rollback()
         return False
     finally:

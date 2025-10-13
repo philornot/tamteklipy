@@ -24,7 +24,7 @@ def test_user_permissions(username: str):
         user = db.query(User).filter(User.username == username).first()
 
         if not user:
-            logger.error(f"Użytkownik '{username}' nie istnieje")
+            logger.warning(f"Użytkownik '{username}' nie istnieje")
             return
 
         logger.info(f"\n{'=' * 80}")
@@ -92,7 +92,7 @@ def test_user_permissions(username: str):
         logger.info(f"\n{'=' * 80}\n")
 
     except Exception as e:
-        logger.error(f"Błąd: {e}")
+        logger.warning(f"Błąd: {e}")
     finally:
         db.close()
 
@@ -105,7 +105,7 @@ def test_all_permissions():
         users = db.query(User).all()
 
         if not users:
-            logger.error("Brak użytkowników w bazie")
+            logger.warning("Brak użytkowników w bazie")
             return
 
         logger.info(f"\n{'=' * 80}")
@@ -159,7 +159,7 @@ def test_all_permissions():
         logger.info("")
 
     except Exception as e:
-        logger.error(f"Błąd: {e}")
+        logger.warning(f"Błąd: {e}")
     finally:
         db.close()
 
@@ -172,7 +172,7 @@ def test_award_accessibility(award_name: str):
         award = db.query(AwardType).filter(AwardType.name == award_name).first()
 
         if not award:
-            logger.error(f"Nagroda '{award_name}' nie istnieje")
+            logger.warning(f"Nagroda '{award_name}' nie istnieje")
 
             # Pokaż dostępne
             logger.info("\nDostępne nagrody:")
@@ -232,7 +232,7 @@ def test_award_accessibility(award_name: str):
         logger.info(f"\n{'=' * 80}\n")
 
     except Exception as e:
-        logger.error(f"Błąd: {e}")
+        logger.warning(f"Błąd: {e}")
     finally:
         db.close()
 

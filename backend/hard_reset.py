@@ -56,8 +56,8 @@ def hard_reset():
                     os.remove(str(db_file))
                     logger.info("   Plik usunięty (wymuszone)")
                 except Exception as e2:
-                    logger.error(f"   Nie można usunąć pliku: {e2}")
-                    logger.error("   Usuń plik ręcznie: del tamteklipy.db")
+                    logger.warning(f"Nie można usunąć pliku: {e2}")
+                    logger.warning("Usuń plik ręcznie: del tamteklipy.db")
                     return
         else:
             logger.info("1. Plik bazy nie istnieje (OK)")
@@ -89,7 +89,7 @@ def hard_reset():
         logger.info("")
 
     except Exception as e:
-        logger.error(f"Błąd podczas hard reset: {e}")
+        logger.warning(f"Błąd podczas hard reset: {e}")
         raise
 
 
