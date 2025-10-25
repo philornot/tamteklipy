@@ -3,6 +3,12 @@
 TamteKlipy to prywatna platforma webowa do zarządzania klipami z gier oraz zrzutami ekranu, przeznaczona wyłącznie dla
 zamkniętej grupy znajomych.
 
+dla filipa:
+
+scp -r frontend/dist/* frpi:~/tamteklipy/frontend/dist/
+python -m uvicorn app.main:app --reload
+
+nie ma za co filip :>
 ## 🚀 Quick Start
 
 ### Pierwszy setup projektu
@@ -19,7 +25,7 @@ python seed_database.py --clear
 python db_status.py
 
 # 4. Uruchom serwer
-uvicorn app.main:app --reload
+python -m uvicorn app.main:app --reload
 ```
 
 ### Co otrzymasz po setup?
