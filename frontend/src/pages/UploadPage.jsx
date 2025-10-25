@@ -41,7 +41,8 @@ function UploadPage() {
     if (!error.response) {
       return {
         title: "Błąd połączenia",
-        message: "Nie można połączyć się z serwerem. Sprawdź połączenie internetowe.",
+        message:
+          "Nie można połączyć się z serwerem. Sprawdź połączenie internetowe.",
         icon: <Wifi size={16} className="text-red-400" />,
         technical: error.message,
       };
@@ -179,17 +180,9 @@ function UploadPage() {
     });
   };
 
-  // ============================================
-  // POPRAWIONY UPLOAD Z TIMEOUT I LEPSZYM ERROR HANDLING
-  // ============================================
   const uploadSingleFile = async (fileObj, index) => {
     const formData = new FormData();
     formData.append("file", fileObj.file);
-
-    // Timeout na upload (5 minut dla dużych plików)
-    const UPLOAD_TIMEOUT = 5 * 60 * 1000;
-    const abortController = new AbortController();
-    const timeoutId = setTimeout(() => abortController.abort(), UPLOAD_TIMEOUT);
 
     try {
       setFiles((prev) =>
@@ -200,7 +193,7 @@ function UploadPage() {
 
       const response = await api.post("/files/upload", formData, {
         headers: { "Content-Type": "multipart/form-data" },
-        signal: abortController.signal,
+        timeout: 60000, // 60 sekund wystarczy bez thumbnail generation
         onUploadProgress: (e) => {
           if (e.total) {
             const progress = Math.round((e.loaded * 100) / e.total);
@@ -211,29 +204,26 @@ function UploadPage() {
         },
       });
 
-      clearTimeout(timeoutId);
       const clipId = response.data.clip_id;
 
+            // Set status to success immediately - no polling required
       setFiles((prev) =>
         prev.map((f, i) =>
           i === index
-            ? { ...f, status: "processing", clipId, progress: 100 }
+            ? {
+                ...f,
+                status: "success",
+                clipId,
+                progress: 100,
+                // Zachowaj lokalny preview jako thumbnail
+                useLocalPreview: true,
+              }
             : f
         )
       );
-
-      await pollThumbnailStatus(clipId, index);
     } catch (error) {
-      clearTimeout(timeoutId);
-
-      // Parse error z nowej funkcji
+            // Error handling unchanged
       const errorInfo = parseErrorMessage(error);
-
-      console.error("Upload error:", {
-        file: fileObj.file.name,
-        error,
-        errorInfo,
-      });
 
       setFiles((prev) =>
         prev.map((f, i) =>
@@ -242,56 +232,16 @@ function UploadPage() {
                 ...f,
                 status: "error",
                 error: errorInfo.message,
-                errorDetails: errorInfo, // ← NOWE
+                errorDetails: errorInfo,
               }
             : f
         )
       );
 
-      // Toast z krótkim komunikatem
-      toast.error(
-        `${fileObj.file.name}: ${errorInfo.title}`,
-        { duration: 5000 }
-      );
+      toast.error(`${fileObj.file.name}: ${errorInfo.title}`, {
+        duration: 5000,
+      });
     }
-  };
-
-  const pollThumbnailStatus = async (clipId, index) => {
-    const maxAttempts = 30;
-    let attempts = 0;
-
-    const poll = async () => {
-      try {
-        const response = await api.get(
-          `/files/clips/${clipId}/thumbnail-status`
-        );
-
-        if (response.data.status === "ready") {
-          setFiles((prev) =>
-            prev.map((f, i) => (i === index ? { ...f, status: "success" } : f))
-          );
-          return true;
-        }
-
-        attempts++;
-        if (attempts >= maxAttempts) {
-          setFiles((prev) =>
-            prev.map((f, i) => (i === index ? { ...f, status: "success" } : f))
-          );
-          return true;
-        }
-
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-        return poll();
-      } catch (error) {
-        setFiles((prev) =>
-          prev.map((f, i) => (i === index ? { ...f, status: "success" } : f))
-        );
-        return true;
-      }
-    };
-
-    return poll();
   };
 
   const handleUploadAll = async () => {
@@ -322,6 +272,7 @@ function UploadPage() {
     if (allSuccess) {
       toast.success("Wszystkie pliki przesłane!");
       setTimeout(() => {
+                // CHANGE: Add state flag
         navigate("/dashboard", { state: { fromUpload: true } });
       }, 1500);
     } else {
@@ -574,11 +525,9 @@ function UploadPage() {
                                   Możliwe rozwiązania:
                                 </p>
                                 <ul className="list-disc list-inside space-y-0.5">
-                                  {fileObj.errorDetails.hints.map(
-                                    (hint, i) => (
-                                      <li key={i}>{hint}</li>
-                                    )
-                                  )}
+                                  {fileObj.errorDetails.hints.map((hint, i) => (
+                                    <li key={i}>{hint}</li>
+                                  ))}
                                 </ul>
                               </div>
                             )}
@@ -643,7 +592,9 @@ function UploadPage() {
           <li>• Pliki są wysyłane kolejno, jeden po drugim</li>
           <li>• Miniaturki generują się w tle (~10s każda)</li>
           <li>• W przypadku błędu kliknij "Spróbuj ponownie"</li>
-          <li>• Jeśli widzisz błąd "Brak dostępu do storage" - spytaj Filipa czy na z pendrivem jest wszyskto ok
+          <li>
+            • Jeśli widzisz błąd "Brak dostępu do storage" - spytaj Filipa czy
+            na z pendrivem jest wszyskto ok
           </li>
         </ul>
       </Card>

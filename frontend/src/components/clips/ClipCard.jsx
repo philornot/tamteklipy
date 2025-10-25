@@ -2,7 +2,11 @@ import { useState } from "react";
 import * as LucideIcons from "lucide-react";
 import { Award, Calendar, Image, Play, User, Check } from "lucide-react";
 import ClipModal from "./ClipModal";
-import { getBaseUrl, getThumbnailUrl, addTokenToUrl } from "../../utils/urlHelper";
+import {
+  getBaseUrl,
+  getThumbnailUrl,
+  addTokenToUrl,
+} from "../../utils/urlHelper";
 import { logger } from "../../utils/logger";
 
 function ClipCard({
@@ -14,6 +18,7 @@ function ClipCard({
   onClipUpdate,
 }) {
   const [showModal, setShowModal] = useState(false);
+  const [thumbnailError, setThumbnailError] = useState(false); // DODAJ TO
 
   // ✅ Thumbnail URL z tokenem
   const thumbnailUrl = clip.has_thumbnail ? getThumbnailUrl(clip.id) : null;
@@ -99,8 +104,10 @@ function ClipCard({
   };
 
   const getSelectionCheckboxClasses = (isChecked = false) => {
-    const base = "w-5 h-5 rounded border-2 flex items-center justify-center transition-all duration-200";
-    const unchecked = "bg-gray-900/80 border-gray-600 hover:border-purple-400 backdrop-blur-sm";
+    const base =
+      "w-5 h-5 rounded border-2 flex items-center justify-center transition-all duration-200";
+    const unchecked =
+      "bg-gray-900/80 border-gray-600 hover:border-purple-400 backdrop-blur-sm";
     const checked = "bg-purple-500 border-purple-500 glow";
 
     return `${base} ${isChecked ? checked : unchecked}`;
@@ -119,43 +126,62 @@ function ClipCard({
         {isSelected && <div className="selection-overlay" />}
 
         <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none">
-          <div className={`absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent to-transparent ${isSelected ? "via-purple-500" : "via-purple-500"}`} />
-          <div className={`absolute inset-0 bg-gradient-to-br from-transparent to-transparent ${isSelected ? "via-purple-500/10" : "via-purple-500/5"}`} />
+          <div
+            className={`absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent to-transparent ${
+              isSelected ? "via-purple-500" : "via-purple-500"
+            }`}
+          />
+          <div
+            className={`absolute inset-0 bg-gradient-to-br from-transparent to-transparent ${
+              isSelected ? "via-purple-500/10" : "via-purple-500/5"
+            }`}
+          />
         </div>
 
-        <div className={`absolute top-2 left-2 z-20 transition-all duration-300 ${selectionMode || isSelected ? "opacity-100 scale-100" : "opacity-0 scale-90 group-hover:opacity-100 group-hover:scale-100"}`}>
-          <button onClick={handleCheckboxClick} className={getSelectionCheckboxClasses(isSelected)}>
-            {isSelected && <Check size={16} className="text-white animate-scale-in" />}
+        <div
+          className={`absolute top-2 left-2 z-20 transition-all duration-300 ${
+            selectionMode || isSelected
+              ? "opacity-100 scale-100"
+              : "opacity-0 scale-90 group-hover:opacity-100 group-hover:scale-100"
+          }`}
+        >
+          <button
+            onClick={handleCheckboxClick}
+            className={getSelectionCheckboxClasses(isSelected)}
+          >
+            {isSelected && (
+              <Check size={16} className="text-white animate-scale-in" />
+            )}
           </button>
         </div>
 
         <div className="relative aspect-video bg-gray-900 flex items-center justify-center overflow-hidden">
-          {thumbnailUrl ? (
-            // ✅ Uproszczone - jeden <img> tag zamiast <picture>
-            // Picture tag może powodować podwójne requesty
+          {thumbnailUrl && !thumbnailError ? (
             <img
               src={thumbnailUrl}
               alt={clip.filename}
               className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
               loading="lazy"
-              onError={(e) => {
-                logger.error("Thumbnail load error for clip", clip.id);
-                logger.error("Attempted URL:", thumbnailUrl);
-                e.target.style.display = "none";
-                // Pokaż placeholder
-                e.target.parentElement.innerHTML = `
-                  <div class="text-gray-600 flex items-center justify-center">
-                    ${clip.clip_type === "video" ? '<svg>...</svg>' : '<svg>...</svg>'}
-                  </div>
-                `;
+              onError={() => {
+                logger.warn(`Thumbnail not ready for clip ${clip.id}`);
+                setThumbnailError(true);
               }}
             />
           ) : (
-            <div className="text-gray-600">
-              {clip.clip_type === "video" ? <Play size={48} /> : <Image size={48} />}
+            // Placeholder - thumbnail nie istnieje lub się nie załadował
+            <div className="flex flex-col items-center justify-center text-gray-600">
+              {clip.clip_type === "video" ? (
+                <Play size={48} className="mb-2" />
+              ) : (
+                <Image size={48} className="mb-2" />
+              )}
+              <span className="text-xs text-gray-500">
+                {thumbnailError ? "Generowanie..." : "Brak miniaturki"}
+              </span>
             </div>
           )}
 
+          {/* Reszta (badges, awards, duration) bez zmian */}
           <div className="absolute bottom-2 left-2 badge badge-default z-10">
             {clip.clip_type === "video" ? "Video" : "Screenshot"}
           </div>
@@ -163,7 +189,11 @@ function ClipCard({
           {clip.award_icons && clip.award_icons.length > 0 && (
             <div className="absolute top-2 right-2 flex items-center -space-x-2 z-10">
               {clip.award_icons.slice(0, 5).map((awardIcon, idx) => (
-                <div key={`${awardIcon.award_name}-${idx}`} className="relative group/award" style={{ zIndex: 10 - idx }}>
+                <div
+                  key={`${awardIcon.award_name}-${idx}`}
+                  className="relative group/award"
+                  style={{ zIndex: 10 - idx }}
+                >
                   {renderAwardIcon(awardIcon)}
                   <div className="absolute bottom-full right-0 mb-2 px-2 py-1 bg-black text-white text-xs rounded opacity-0 group-hover/award:opacity-100 transition whitespace-nowrap pointer-events-none">
                     {awardIcon.count}x
@@ -180,14 +210,23 @@ function ClipCard({
 
           {clip.duration && (
             <div className="absolute bottom-2 right-2 badge badge-default">
-              {Math.floor(clip.duration / 60)}:{String(clip.duration % 60).padStart(2, "0")}
+              {Math.floor(clip.duration / 60)}:
+              {String(clip.duration % 60).padStart(2, "0")}
             </div>
           )}
 
           {!selectionMode && (
-            <div className={`absolute inset-0 bg-gradient-to-b from-purple-600/10 via-purple-900/30 to-black/70 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-500 ${isSelected && "hidden"}`}>
+            <div
+              className={`absolute inset-0 bg-gradient-to-b from-purple-600/10 via-purple-900/30 to-black/70 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-500 ${
+                isSelected && "hidden"
+              }`}
+            >
               <div className="relative transform group-hover:scale-110 transition-transform duration-500">
-                <Play size={56} className="text-white drop-shadow-2xl relative z-10" fill="rgba(255,255,255,0.9)" />
+                <Play
+                  size={56}
+                  className="text-white drop-shadow-2xl relative z-10"
+                  fill="rgba(255,255,255,0.9)"
+                />
                 <div className="absolute inset-0 blur-2xl bg-purple-500/60 animate-pulse" />
                 <div className="absolute inset-0 blur-3xl bg-fuchsia-500/40" />
               </div>
@@ -196,29 +235,59 @@ function ClipCard({
         </div>
 
         <div className="p-4 relative">
-          <h3 className={`font-semibold truncate mb-2 transition-all duration-300 ${isSelected ? "text-purple-300" : "text-white group-hover:gradient-text-primary"}`} title={clip.filename}>
+          <h3
+            className={`font-semibold truncate mb-2 transition-all duration-300 ${
+              isSelected
+                ? "text-purple-300"
+                : "text-white group-hover:gradient-text-primary"
+            }`}
+            title={clip.filename}
+          >
             {clip.filename}
           </h3>
 
           <div className="flex items-center gap-4 text-sm text-gray-400 mb-3">
-            <div className={`flex items-center gap-1 transition-colors ${isSelected ? "text-purple-300" : "group-hover:text-purple-300"}`}>
+            <div
+              className={`flex items-center gap-1 transition-colors ${
+                isSelected ? "text-purple-300" : "group-hover:text-purple-300"
+              }`}
+            >
               <User size={14} />
               <span>{clip.uploader_username}</span>
             </div>
 
-            <div className={`flex items-center gap-1 transition-colors ${isSelected ? "text-purple-300" : "group-hover:text-purple-300"}`}>
+            <div
+              className={`flex items-center gap-1 transition-colors ${
+                isSelected ? "text-purple-300" : "group-hover:text-purple-300"
+              }`}
+            >
               <Calendar size={14} />
               <span>{formatDate(clip.created_at)}</span>
             </div>
           </div>
 
           <div className="flex items-center justify-between text-sm">
-            <div className={`flex items-center gap-1 transition-colors ${isSelected ? "text-purple-400" : "text-yellow-500 group-hover:text-purple-400"}`}>
-              <Award size={16} className="group-hover:drop-shadow-lg group-hover:animate-pulse" />
+            <div
+              className={`flex items-center gap-1 transition-colors ${
+                isSelected
+                  ? "text-purple-400"
+                  : "text-yellow-500 group-hover:text-purple-400"
+              }`}
+            >
+              <Award
+                size={16}
+                className="group-hover:drop-shadow-lg group-hover:animate-pulse"
+              />
               <span className="font-medium">{clip.award_count}</span>
             </div>
 
-            <span className={`transition-colors ${isSelected ? "text-purple-400" : "text-gray-500 group-hover:text-purple-400"}`}>
+            <span
+              className={`transition-colors ${
+                isSelected
+                  ? "text-purple-400"
+                  : "text-gray-500 group-hover:text-purple-400"
+              }`}
+            >
               {formatFileSize(clip.file_size_mb)}
             </span>
           </div>
@@ -226,7 +295,11 @@ function ClipCard({
       </div>
 
       {!selectionMode && showModal && (
-        <ClipModal clip={clip} onClose={() => setShowModal(false)} onClipUpdate={onClipUpdate} />
+        <ClipModal
+          clip={clip}
+          onClose={() => setShowModal(false)}
+          onClipUpdate={onClipUpdate}
+        />
       )}
     </>
   );

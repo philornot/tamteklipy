@@ -11,13 +11,6 @@ from pathlib import Path
 from typing import List, Optional
 
 import aiofiles
-from fastapi import APIRouter, UploadFile, File, Depends, BackgroundTasks, Request, Response
-from fastapi.responses import FileResponse, StreamingResponse
-from fastapi_cache.decorator import cache
-from pydantic import BaseModel, Field
-from sqlalchemy import desc, asc
-from sqlalchemy.orm import Session, selectinload, joinedload
-
 from app.core.cache import cache_key_builder
 from app.core.database import get_db
 from app.core.dependencies import get_current_user, get_current_user_flexible
@@ -30,16 +23,32 @@ from app.models.award_type import AwardType
 from app.models.clip import Clip, ClipType
 from app.models.user import User
 from app.schemas.clip import ClipResponse, ClipListResponse, ClipDetailResponse
+from app.services.background_tasks import process_thumbnail_background
+from app.services.background_tasks import process_thumbnail_background
 from app.services.file_processor import (
     save_file_to_disk, create_clip_record,
     invalidate_clips_cache, get_storage_directory
 )
-from app.services.background_tasks import process_thumbnail_background
+from app.services.file_processor import (
+    save_file_to_disk, create_clip_record,
+    invalidate_clips_cache, get_storage_directory
+)
 from app.services.file_validator import (
     validate_file_type, validate_file_size,
     generate_unique_filename, check_disk_space
 )
+from app.services.file_validator import (
+    validate_file_type, validate_file_size,
+    generate_unique_filename, check_disk_space
+)
+from app.services.thumbnail_service import extract_video_metadata
 from app.utils.file_helpers import can_access_clip
+from fastapi import APIRouter, UploadFile, File, Depends, BackgroundTasks, Request, Response
+from fastapi.responses import FileResponse, StreamingResponse
+from fastapi_cache.decorator import cache
+from pydantic import BaseModel, Field
+from sqlalchemy import desc, asc
+from sqlalchemy.orm import Session, selectinload, joinedload
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -98,26 +107,13 @@ class BulkActionResponse(BaseModel):
 
 @router.post("/upload")
 async def upload_file(
-    background_tasks: BackgroundTasks,
-    file: UploadFile = File(...),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+        file: UploadFile = File(...),
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user)
 ):
     """
-    Upload pliku z asynchronicznym generowaniem thumbnails
-
-    **Flow:**
-    1. Walidacja pliku (typ, rozmiar)
-    2. Zapis na dysku
-    3. Utworzenie rekordu w bazie
-    4. Zwrócenie response (user widzi sukces natychmiast)
-    5. Generowanie thumbnail w tle (nie blokuje)
-
-    **Returns:**
-    - 200: Plik przesłany pomyślnie
-    - 400: Błąd walidacji (zły typ, za duży)
-    - 413: Brak miejsca na dysku
-    - 500: Nieoczekiwany błąd
+    Upload pliku z szybką ekstrakcją metadanych, BEZ generowania thumbnails.
+    Thumbnails są generowane lazy lub używane z preview przeglądarki.
     """
     logger.info(f"Upload from {current_user.username}: {file.filename}")
 
@@ -143,7 +139,18 @@ async def upload_file(
         file_path = await save_file_to_disk(file_content, unique_filename, clip_type)
         logger.info(f"File saved: {file_path}")
 
-        # 7. Utworzenie rekordu w bazie (bez thumbnails - będą dodane później)
+        # 7. SZYBKA ekstrakcja metadanych (tylko resolution i duration)
+        metadata = None
+        if clip_type == ClipType.VIDEO:
+            try:
+                # Użyj krótkiego timeoutu - jeśli nie zdąży, trudno
+                metadata = extract_video_metadata(str(file_path), timeout=15)
+            except Exception as e:
+                logger.warning(f"Metadata extraction failed (non-critical): {e}")
+                # Nie blokuj uploadu jeśli metadata nie działa
+                metadata = None
+
+        # 8. Utworzenie rekordu w bazie BEZ thumbnail paths
         new_clip = await create_clip_record(
             db=db,
             filename=file.filename,
@@ -151,25 +158,16 @@ async def upload_file(
             file_size=file_size,
             clip_type=clip_type,
             uploader_id=current_user.id,
-            thumbnail_path=None,
-            thumbnail_webp_path=None,
-            metadata=None
+            thumbnail_path=None,  # Brak thumbnails
+            thumbnail_webp_path=None,  # Brak thumbnails
+            metadata=metadata
         )
         logger.info(f"Clip created: ID={new_clip.id}")
-
-        # 8. Zakolejkowanie generowania thumbnail w tle
-        background_tasks.add_task(
-            process_thumbnail_background,
-            clip_id=new_clip.id,
-            file_path=str(file_path),
-            clip_type=clip_type
-        )
-        logger.info(f"Thumbnail task queued for clip {new_clip.id}")
 
         # 9. Invalidacja cache
         await invalidate_clips_cache()
 
-        # 10. Natychmiastowy response
+        # 10. Natychmiastowy response - wszystko gotowe
         return {
             "message": "Plik został przesłany pomyślnie",
             "clip_id": new_clip.id,
@@ -178,9 +176,11 @@ async def upload_file(
             "clip_type": clip_type.value,
             "uploader": current_user.username,
             "created_at": new_clip.created_at.isoformat(),
-            "thumbnail_status": "processing",
-            "thumbnail_ready": False,
-            "processing_info": "Miniaturka jest generowana w tle"
+            "thumbnail_status": "not_generated",  # Informacja dla frontendu
+            "use_video_preview": True,  # Frontend użyje preview z video
+            "duration": new_clip.duration,
+            "width": new_clip.width,
+            "height": new_clip.height
         }
 
     except (ValidationError, FileUploadError, StorageError):
@@ -201,16 +201,16 @@ async def upload_file(
 @router.get("/clips", response_model=ClipListResponse)
 @cache(expire=30, key_builder=cache_key_builder)
 async def list_clips(
-    request: Request,
-    response: Response,
-    page: int = 1,
-    limit: int = 50,
-    sort_by: str = "created_at",
-    sort_order: str = "desc",
-    clip_type: Optional[str] = None,
-    uploader_id: Optional[int] = None,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+        request: Request,
+        response: Response,
+        page: int = 1,
+        limit: int = 50,
+        sort_by: str = "created_at",
+        sort_order: str = "desc",
+        clip_type: Optional[str] = None,
+        uploader_id: Optional[int] = None,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user)
 ):
     """
     Listowanie klipów z paginacją, sortowaniem i filtrowaniem
@@ -369,10 +369,10 @@ async def list_clips(
 @router.get("/clips/{clip_id}", response_model=ClipDetailResponse)
 @cache(expire=300, key_builder=cache_key_builder)
 async def get_clip(
-    request: Request,
-    clip_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+        request: Request,
+        clip_id: int,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user)
 ):
     """
     Szczegóły pojedynczego klipa
@@ -433,9 +433,9 @@ async def get_clip(
 
 @router.get("/download/{clip_id}")
 async def download_clip(
-    clip_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user_flexible)
+        clip_id: int,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user_flexible)
 ):
     """
     Pobieranie pojedynczego pliku
@@ -483,9 +483,9 @@ async def download_clip(
 
 @router.post("/download-bulk")
 async def download_bulk(
-    request: BulkDownloadRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+        request: BulkDownloadRequest,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user)
 ):
     """
     Bulk download - pobieranie wielu klipów jako ZIP
@@ -583,9 +583,9 @@ async def download_bulk(
 
 @router.post("/clips/bulk-action", response_model=BulkActionResponse)
 async def bulk_action(
-    request: BulkActionRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+        request: BulkActionRequest,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user)
 ):
     """
     Masowa operacja na klipach
@@ -677,9 +677,9 @@ async def bulk_action(
 
 
 async def bulk_action_delete(
-    clip_ids: List[int],
-    db: Session,
-    current_user: User
+        clip_ids: List[int],
+        db: Session,
+        current_user: User
 ) -> dict:
     """
     Masowe usuwanie klipów (soft delete)
@@ -740,10 +740,10 @@ async def bulk_action_delete(
 
 
 async def bulk_action_add_tags(
-    clip_ids: List[int],
-    tags: List[str],
-    db: Session,
-    current_user: User
+        clip_ids: List[int],
+        tags: List[str],
+        db: Session,
+        current_user: User
 ) -> dict:
     """
     Masowe dodawanie tagów (placeholder - wymaga modelu Tag)
@@ -759,10 +759,10 @@ async def bulk_action_add_tags(
 
 
 async def bulk_action_add_to_session(
-    clip_ids: List[int],
-    session_name: str,
-    db: Session,
-    current_user: User
+        clip_ids: List[int],
+        session_name: str,
+        db: Session,
+        current_user: User
 ) -> dict:
     """
     Masowe dodawanie do sesji (placeholder - wymaga modelu Session)
@@ -783,9 +783,9 @@ async def bulk_action_add_to_session(
 
 @router.get("/thumbnails/{clip_id}")
 async def get_thumbnail(
-    clip_id: int,
-    request: Request,
-    db: Session = Depends(get_db)
+        clip_id: int,
+        request: Request,
+        db: Session = Depends(get_db)
 ):
     """
     Pobieranie thumbnail (endpoint publiczny)
@@ -843,9 +843,9 @@ async def get_thumbnail(
 
 @router.get("/clips/{clip_id}/thumbnail-status")
 async def get_thumbnail_status(
-    clip_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+        clip_id: int,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user)
 ):
     """
     Sprawdzenie statusu generowania thumbnail
@@ -904,10 +904,10 @@ async def get_thumbnail_status(
 
 @router.get("/stream/{clip_id}")
 async def stream_video(
-    clip_id: int,
-    request: Request,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user_flexible)
+        clip_id: int,
+        request: Request,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user_flexible)
 ):
     """
     Streaming video z obsługą Range requests (HTTP 206)
@@ -1074,9 +1074,9 @@ async def health_check(db: Session = Depends(get_db)):
 
 @router.delete("/clips/{clip_id}/hard-delete")
 async def hard_delete_clip(
-    clip_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+        clip_id: int,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user)
 ):
     """
     Hard delete - trwałe usunięcie klipu i pliku z dysku
@@ -1149,10 +1149,10 @@ async def hard_delete_clip(
 
 @router.post("/clips/{clip_id}/regenerate-thumbnail")
 async def regenerate_thumbnail(
-    clip_id: int,
-    background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+        clip_id: int,
+        background_tasks: BackgroundTasks,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user)
 ):
     """
     Regeneracja thumbnail dla klipa
@@ -1210,6 +1210,47 @@ async def regenerate_thumbnail(
 
     return {
         "message": "Regeneracja thumbnail została zakolejkowana",
+        "clip_id": clip_id,
+        "status": "processing"
+    }
+
+
+@router.post("/clips/{clip_id}/generate-thumbnail")
+async def generate_thumbnail_on_demand(
+        clip_id: int,
+        background_tasks: BackgroundTasks,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user)
+):
+    """
+    Generuje thumbnail on-demand dla klipa który go nie ma.
+    Używane gdy user ogląda klip pierwszy raz.
+    """
+    clip = db.query(Clip).filter(
+        Clip.id == clip_id,
+        Clip.is_deleted == False
+    ).first()
+
+    if not clip:
+        raise NotFoundError(resource="Klip", resource_id=clip_id)
+
+    # Jeśli już ma thumbnail, nie generuj ponownie
+    if clip.thumbnail_path:
+        return {
+            "message": "Thumbnail already exists",
+            "thumbnail_url": f"/api/files/thumbnails/{clip_id}"
+        }
+
+    # Zakolejkuj generowanie w tle
+    background_tasks.add_task(
+        process_thumbnail_background,
+        clip_id=clip.id,
+        file_path=str(clip.file_path),
+        clip_type=clip.clip_type
+    )
+
+    return {
+        "message": "Thumbnail generation started",
         "clip_id": clip_id,
         "status": "processing"
     }

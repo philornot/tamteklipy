@@ -274,16 +274,11 @@ def generate_image_thumbnail(
             reason=str(e)
         )
 
-
-def extract_video_metadata(video_path: str) -> Optional[dict]:
+# todo: The function signature has changed to include a 'timeout' parameter, but the function 'extract_image_metadata' at line 332 does not have a corresponding timeout parameter. Consider adding consistent timeout handling for both video and image metadata extraction.
+def extract_video_metadata(video_path: str, timeout: int = 15) -> Optional[dict]:
     """
-    Wyciąga metadane z video (duration, width, height) używając FFprobe
-
-    Args:
-        video_path: Ścieżka do pliku video
-
-    Returns:
-        dict: Metadane video lub None jeśli błąd
+    Wyciąga TYLKO podstawowe metadane (duration, resolution).
+    Timeout 15s - jeśli nie zdąży, zwraca None.
     """
     try:
         cmd = [
@@ -300,7 +295,7 @@ def extract_video_metadata(video_path: str) -> Optional[dict]:
             cmd,
             capture_output=True,
             text=True,
-            timeout=90
+            timeout=timeout  # Krótki timeout
         )
 
         if result.returncode != 0:
@@ -310,7 +305,6 @@ def extract_video_metadata(video_path: str) -> Optional[dict]:
         import json
         data = json.loads(result.stdout)
 
-        # Wyciągnij dane
         stream = data.get("streams", [{}])[0]
         format_data = data.get("format", {})
 
@@ -327,6 +321,9 @@ def extract_video_metadata(video_path: str) -> Optional[dict]:
             "duration": duration
         }
 
+    except subprocess.TimeoutExpired:
+        logger.warning(f"FFprobe timeout after {timeout}s for {video_path}")
+        return None
     except Exception as e:
         logger.error(f"Metadata extraction failed: {e}")
         return None

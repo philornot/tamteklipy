@@ -7,7 +7,11 @@ import SortFilter from "../components/ui/SortFilter";
 import { AlertCircle, CheckSquare, Sparkles } from "lucide-react";
 import usePageTitle from "../hooks/usePageTitle.js";
 import { useBulkSelection } from "../hooks/useBulkSelection.js";
-import { Button, SectionHeader, Spinner } from "../components/ui/StyledComponents";
+import {
+  Button,
+  SectionHeader,
+  Spinner,
+} from "../components/ui/StyledComponents";
 import { logger } from "../utils/logger";
 
 function DashboardPage() {
@@ -83,47 +87,44 @@ function DashboardPage() {
   };
 
   // Fetch clips function
-  const fetchClips = useCallback(
-    async (pageNum, append = false) => {
+  const fetchClips = useCallback(async (pageNum, append = false) => {
+    if (append) {
+      setLoadingMore(true);
+    } else {
+      setLoading(true);
+    }
+    setError(null);
+
+    try {
+      const params = {
+        page: pageNum,
+        limit: 12,
+        sort_by: sortBy,
+        sort_order: sortOrder,
+      };
+
+      if (clipType) {
+        params.clip_type = clipType;
+      }
+
+      const response = await api.get("/files/clips", { params });
+
       if (append) {
-        setLoadingMore(true);
+        setClips((prev) => [...prev, ...response.data.clips]);
       } else {
-        setLoading(true);
+        setClips(response.data.clips);
       }
-      setError(null);
 
-      try {
-        const params = {
-          page: pageNum,
-          limit: 12,
-          sort_by: sortBy,
-          sort_order: sortOrder,
-        };
-
-        if (clipType) {
-          params.clip_type = clipType;
-        }
-
-        const response = await api.get("/files/clips", { params });
-
-        if (append) {
-          setClips((prev) => [...prev, ...response.data.clips]);
-        } else {
-          setClips(response.data.clips);
-        }
-
-        setHasMore(response.data.page < response.data.pages);
-                logger.info("Clips fetched, thumbnails Link headers set for prefetch");
-      } catch (err) {
-        logger.error("Failed to fetch clips:", err);
-        setError("Nie udało się załadować klipów");
-      } finally {
-        setLoading(false);
-        setLoadingMore(false);
-      }
-    },
-    []
-  );
+      setHasMore(response.data.page < response.data.pages);
+      logger.info("Clips fetched, thumbnails Link headers set for prefetch");
+    } catch (err) {
+      logger.error("Failed to fetch clips:", err);
+      setError("Nie udało się załadować klipów");
+    } finally {
+      setLoading(false);
+      setLoadingMore(false);
+    }
+  }, []);
 
   // AUTO-REFRESH po powrocie z upload page
   useEffect(() => {
@@ -346,7 +347,10 @@ function DashboardPage() {
       )}
 
       {/* Infinite Scroll Observer Target */}
-      <div ref={observerTarget} className="py-12 flex items-center justify-center">
+      <div
+        ref={observerTarget}
+        className="py-12 flex items-center justify-center"
+      >
         {loadingMore && (
           <div className="flex items-center gap-3 text-purple-400 bg-gray-800/50 px-6 py-3 rounded-xl border border-purple-500/20 backdrop-blur-sm">
             <div className="relative">
@@ -386,7 +390,10 @@ function DashboardPage() {
             <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 -translate-x-full group-hover:translate-x-full group-hover:duration-1000" />
             <span className="relative z-10 flex items-center gap-3">
               Załaduj więcej
-              <Sparkles size={18} className="text-purple-400 group-hover:text-fuchsia-300 group-hover:animate-pulse transition-colors duration-300" />
+              <Sparkles
+                size={18}
+                className="text-purple-400 group-hover:text-fuchsia-300 group-hover:animate-pulse transition-colors duration-300"
+              />
             </span>
           </Button>
         </div>
@@ -399,9 +406,7 @@ function DashboardPage() {
             <div className="absolute inset-0 blur-2xl bg-purple-500/20 animate-pulse" />
             <Sparkles size={64} className="relative text-purple-400" />
           </div>
-          <h3 className="text-2xl font-bold text-gray-300 mb-2">
-            Brak klipów
-          </h3>
+          <h3 className="text-2xl font-bold text-gray-300 mb-2">Brak klipów</h3>
           <p className="text-gray-400 mb-6">
             {clipType || sortBy !== "created_at"
               ? "Spróbuj zmienić filtry"
@@ -410,7 +415,7 @@ function DashboardPage() {
           <Button
             variant="primary"
             size="lg"
-            onClick={() => window.location.href = "/upload"}
+            onClick={() => (window.location.href = "/upload")}
           >
             Prześlij pierwszy klip
           </Button>
