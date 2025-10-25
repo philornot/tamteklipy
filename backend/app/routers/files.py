@@ -9,9 +9,10 @@ from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import List, Optional
-from app.core.config import settings
+
 import aiofiles
 from app.core.cache import cache_key_builder
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.dependencies import get_current_user, get_current_user_flexible
 from app.core.exceptions import (
@@ -23,6 +24,7 @@ from app.models.award_type import AwardType
 from app.models.clip import Clip, ClipType
 from app.models.user import User
 from app.schemas.clip import ClipResponse, ClipListResponse, ClipDetailResponse
+from app.services.background_tasks import generate_webp_from_jpeg_background
 from app.services.background_tasks import process_thumbnail_background
 from app.services.background_tasks import process_thumbnail_background
 from app.services.file_processor import (
@@ -42,7 +44,6 @@ from app.services.file_validator import (
     generate_unique_filename, check_disk_space
 )
 from app.services.thumbnail_service import extract_video_metadata
-from app.services.background_tasks import generate_webp_from_jpeg_background
 from app.utils.file_helpers import can_access_clip
 from fastapi import APIRouter, UploadFile, File, Depends, BackgroundTasks, Request, Response
 from fastapi.responses import FileResponse, StreamingResponse
@@ -111,11 +112,16 @@ async def upload_file(
         background_tasks: BackgroundTasks,
         file: UploadFile = File(...),
         thumbnail: Optional[UploadFile] = File(None),
-        db: Session = Depends(get_db),
+        db=Depends(get_db),
         current_user: User = Depends(get_current_user)
 ):
     """
     Upload pliku z opcjonalnym thumbnail z frontendu
+
+    ZMIANY:
+    - Usunięto ffprobe (timeout >15s, wolniejsze niż thumbnail z frontendu)
+    - Metadata (resolution, duration) są NULL - będą uzupełnione przez background task
+    - Priorytet: thumbnail z frontendu > background generation
     """
     logger.info(f"Upload from {current_user.username}: {file.filename}")
 
@@ -141,15 +147,12 @@ async def upload_file(
         file_path = await save_file_to_disk(file_content, unique_filename, clip_type)
         logger.info(f"File saved: {file_path}")
 
-        # 7. Ekstrakcja metadanych (szybka, z timeoutem)
+        # 7. ❌ USUNIĘTO: ffprobe metadata extraction
+        # Powód: timeout >15s, wolniejsze niż thumbnail z frontendu
+        # Metadata będą uzupełnione przez background task jeśli potrzebne
         metadata = None
-        if clip_type == ClipType.VIDEO:
-            try:
-                metadata = extract_video_metadata(str(file_path), timeout=15)
-            except Exception as e:
-                logger.warning(f"Metadata extraction failed (non-critical): {e}")
 
-        # 8. NAJPIERW utwórz rekord w bazie (bez thumbnails)
+        # 8. Utwórz rekord w bazie (bez metadata — będą NULL)
         new_clip = await create_clip_record(
             db=db,
             filename=file.filename,
@@ -159,11 +162,11 @@ async def upload_file(
             uploader_id=current_user.id,
             thumbnail_path=None,  # Uzupełnimy za chwilę
             thumbnail_webp_path=None,
-            metadata=metadata
+            metadata=metadata  # None — będzie uzupełnione w tle jeśli potrzebne
         )
         logger.info(f"Clip created: ID={new_clip.id}")
 
-        # 9. TERAZ obsłuż thumbnail (mamy już new_clip.id)
+        # 9. Obsłuż thumbnail (mamy już new_clip.id)
         thumbnail_path = None
         thumbnail_webp_path = None
 
@@ -229,6 +232,7 @@ async def upload_file(
             "created_at": new_clip.created_at.isoformat(),
             "thumbnail_status": "ready" if thumbnail else "processing",
             "thumbnail_ready": thumbnail is not None,
+            # Metadata będą NULL - uzupełnione w tle jeśli potrzebne
             "duration": new_clip.duration,
             "width": new_clip.width,
             "height": new_clip.height
