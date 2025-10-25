@@ -76,7 +76,7 @@ def generate_thumbnail(
             cmd_jpeg,
             capture_output=True,
             text=True,
-            timeout=30
+            timeout=90
         )
 
         if result.returncode != 0:
@@ -111,7 +111,7 @@ def generate_thumbnail(
             cmd_webp,
             capture_output=True,
             text=True,
-            timeout=30
+            timeout=90
         )
 
         if result.returncode != 0:
@@ -207,7 +207,7 @@ def generate_image_thumbnail(
             cmd_jpeg,
             capture_output=True,
             text=True,
-            timeout=15
+            timeout=90
         )
 
         if result.returncode != 0:
@@ -240,7 +240,7 @@ def generate_image_thumbnail(
             cmd_webp,
             capture_output=True,
             text=True,
-            timeout=15
+            timeout=90
         )
 
         if result.returncode != 0:
@@ -300,7 +300,7 @@ def extract_video_metadata(video_path: str) -> Optional[dict]:
             cmd,
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=90
         )
 
         if result.returncode != 0:
@@ -356,7 +356,7 @@ def extract_image_metadata(image_path: str) -> Optional[dict]:
             cmd,
             capture_output=True,
             text=True,
-            timeout=5
+            timeout=90
         )
 
         if result.returncode != 0:
