@@ -79,9 +79,17 @@ def generate_unique_filename(original_filename: str, extension: str) -> str:
     Returns:
         str: Unikalna nazwa pliku z rozszerzeniem
     """
-    safe_name = "".join(c for c in original_filename if c.isalnum() or c in "._- ")
+    # Usuń rozszerzenie z original_filename jeśli istnieje
+    name_without_ext = Path(original_filename).stem
+
+    safe_name = "".join(c for c in name_without_ext if c.isalnum() or c in "._- ")
     safe_name = safe_name[:50]
     unique_id = str(uuid.uuid4())
+
+    # Upewnij się że extension zaczyna się od kropki
+    if not extension.startswith('.'):
+        extension = f'.{extension}'
+
     return f"{unique_id}_{safe_name}{extension}"
 
 

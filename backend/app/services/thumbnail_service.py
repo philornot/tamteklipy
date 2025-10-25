@@ -76,7 +76,7 @@ def generate_thumbnail(
             cmd_jpeg,
             capture_output=True,
             text=True,
-            timeout=90
+            timeout=180
         )
 
         if result.returncode != 0:
@@ -111,7 +111,7 @@ def generate_thumbnail(
             cmd_webp,
             capture_output=True,
             text=True,
-            timeout=90
+            timeout=180
         )
 
         if result.returncode != 0:

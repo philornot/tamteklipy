@@ -5,6 +5,7 @@ Wywoływane przez FastAPI BackgroundTasks
 import logging
 from pathlib import Path
 
+from app.core.config import settings
 from app.core.database import SessionLocal
 from app.models.clip import Clip, ClipType
 from app.services.thumbnail_service import (
@@ -13,7 +14,6 @@ from app.services.thumbnail_service import (
     extract_video_metadata,
     extract_image_metadata
 )
-from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -160,3 +160,42 @@ def retry_thumbnail_generation(clip_id: int):
 
     finally:
         db.close()
+
+
+def generate_webp_from_jpeg_background(jpeg_path: str, webp_path: str, clip_id: int, db):
+    """
+    Konwertuje JPEG na WebP w tle i aktualizuje bazę
+    """
+    from app.core.database import SessionLocal
+    import subprocess
+
+    db_session = SessionLocal()
+
+    try:
+        cmd = [
+            "ffmpeg",
+            "-i", jpeg_path,
+            "-c:v", "libwebp",
+            "-quality", "75",
+            "-y",
+            webp_path
+        ]
+
+        result = subprocess.run(cmd, capture_output=True, timeout=30)
+
+        if result.returncode == 0 and Path(webp_path).exists():
+            logger.info(f"WebP generated: {webp_path}")
+
+            # Zaktualizuj bazę
+            clip = db_session.query(Clip).filter(Clip.id == clip_id).first()
+            if clip:
+                clip.thumbnail_webp_path = webp_path
+                db_session.commit()
+                logger.info(f"Clip {clip_id} updated with WebP path")
+        else:
+            logger.warning(f"WebP generation failed for clip {clip_id}, JPEG fallback OK")
+
+    except Exception as e:
+        logger.warning(f"WebP generation error (non-critical): {e}")
+    finally:
+        db_session.close()

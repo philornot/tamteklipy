@@ -9,7 +9,7 @@ from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import List, Optional
-
+from app.core.config import settings
 import aiofiles
 from app.core.cache import cache_key_builder
 from app.core.database import get_db
@@ -42,6 +42,7 @@ from app.services.file_validator import (
     generate_unique_filename, check_disk_space
 )
 from app.services.thumbnail_service import extract_video_metadata
+from app.services.background_tasks import generate_webp_from_jpeg_background
 from app.utils.file_helpers import can_access_clip
 from fastapi import APIRouter, UploadFile, File, Depends, BackgroundTasks, Request, Response
 from fastapi.responses import FileResponse, StreamingResponse
@@ -107,13 +108,14 @@ class BulkActionResponse(BaseModel):
 
 @router.post("/upload")
 async def upload_file(
+        background_tasks: BackgroundTasks,
         file: UploadFile = File(...),
+        thumbnail: Optional[UploadFile] = File(None),
         db: Session = Depends(get_db),
         current_user: User = Depends(get_current_user)
 ):
     """
-    Upload pliku z szybką ekstrakcją metadanych, BEZ generowania thumbnails.
-    Thumbnails są generowane lazy lub używane z preview przeglądarki.
+    Upload pliku z opcjonalnym thumbnail z frontendu
     """
     logger.info(f"Upload from {current_user.username}: {file.filename}")
 
@@ -139,18 +141,15 @@ async def upload_file(
         file_path = await save_file_to_disk(file_content, unique_filename, clip_type)
         logger.info(f"File saved: {file_path}")
 
-        # 7. SZYBKA ekstrakcja metadanych (tylko resolution i duration)
+        # 7. Ekstrakcja metadanych (szybka, z timeoutem)
         metadata = None
         if clip_type == ClipType.VIDEO:
             try:
-                # Użyj krótkiego timeoutu - jeśli nie zdąży, trudno
                 metadata = extract_video_metadata(str(file_path), timeout=15)
             except Exception as e:
                 logger.warning(f"Metadata extraction failed (non-critical): {e}")
-                # Nie blokuj uploadu jeśli metadata nie działa
-                metadata = None
 
-        # 8. Utworzenie rekordu w bazie BEZ thumbnail paths
+        # 8. NAJPIERW utwórz rekord w bazie (bez thumbnails)
         new_clip = await create_clip_record(
             db=db,
             filename=file.filename,
@@ -158,16 +157,68 @@ async def upload_file(
             file_size=file_size,
             clip_type=clip_type,
             uploader_id=current_user.id,
-            thumbnail_path=None,  # Brak thumbnails
-            thumbnail_webp_path=None,  # Brak thumbnails
+            thumbnail_path=None,  # Uzupełnimy za chwilę
+            thumbnail_webp_path=None,
             metadata=metadata
         )
         logger.info(f"Clip created: ID={new_clip.id}")
 
-        # 9. Invalidacja cache
+        # 9. TERAZ obsłuż thumbnail (mamy już new_clip.id)
+        thumbnail_path = None
+        thumbnail_webp_path = None
+
+        if thumbnail:
+            try:
+                # Przygotuj katalog
+                thumbnails_dir = Path(settings.thumbnails_path)
+                if settings.environment == "development":
+                    thumbnails_dir = (Path.cwd() / "uploads" / "thumbnails").resolve()
+
+                thumbnails_dir.mkdir(parents=True, exist_ok=True)
+
+                # Nazwa pliku z ID klipu
+                thumbnail_filename = f"{Path(file.filename).stem}_{new_clip.id}"
+                thumbnail_path = thumbnails_dir / f"{thumbnail_filename}.jpg"
+
+                # Zapisz thumbnail z frontendu
+                thumbnail_content = await thumbnail.read()
+                async with aiofiles.open(thumbnail_path, "wb") as f:
+                    await f.write(thumbnail_content)
+
+                logger.info(f"Thumbnail from frontend saved: {thumbnail_path}")
+
+                # Zaktualizuj rekord w bazie
+                new_clip.thumbnail_path = str(thumbnail_path)
+                db.commit()
+
+                # Zakolejkuj generowanie WebP w tle
+                webp_path = thumbnails_dir / f"{thumbnail_filename}.webp"
+                background_tasks.add_task(
+                    generate_webp_from_jpeg_background,
+                    str(thumbnail_path),
+                    str(webp_path),
+                    new_clip.id,
+                    db
+                )
+
+            except Exception as e:
+                logger.warning(f"Failed to save thumbnail from frontend: {e}")
+                # Nie blokuj uploadu, backend wygeneruje w tle
+
+        # 10. Jeśli NIE było thumbnail z frontendu, zakolejkuj pełne generowanie
+        if not thumbnail:
+            background_tasks.add_task(
+                process_thumbnail_background,
+                clip_id=new_clip.id,
+                file_path=str(file_path),
+                clip_type=clip_type
+            )
+            logger.info(f"Thumbnail generation queued (backend fallback)")
+
+        # 11. Invalidacja cache
         await invalidate_clips_cache()
 
-        # 10. Natychmiastowy response - wszystko gotowe
+        # 12. Response
         return {
             "message": "Plik został przesłany pomyślnie",
             "clip_id": new_clip.id,
@@ -176,8 +227,8 @@ async def upload_file(
             "clip_type": clip_type.value,
             "uploader": current_user.username,
             "created_at": new_clip.created_at.isoformat(),
-            "thumbnail_status": "not_generated",  # Informacja dla frontendu
-            "use_video_preview": True,  # Frontend użyje preview z video
+            "thumbnail_status": "ready" if thumbnail else "processing",
+            "thumbnail_ready": thumbnail is not None,
             "duration": new_clip.duration,
             "width": new_clip.width,
             "height": new_clip.height

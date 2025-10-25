@@ -180,9 +180,20 @@ function UploadPage() {
     });
   };
 
-  const uploadSingleFile = async (fileObj, index) => {
-    const formData = new FormData();
-    formData.append("file", fileObj.file);
+const uploadSingleFile = async (fileObj, index) => {
+  const formData = new FormData();
+  formData.append("file", fileObj.file);
+
+  // Wygeneruj i dodaj thumbnail
+  try {
+    const thumbnailBlob = await generateThumbnailFromFile(fileObj.file);
+    if (thumbnailBlob) {
+      formData.append("thumbnail", thumbnailBlob, "thumbnail.jpg");
+    }
+  } catch (err) {
+    console.error("Failed to generate thumbnail:", err);
+    // Kontynuuj bez thumbnail — backend może wygenerować w tle
+  }
 
     try {
       setFiles((prev) =>
@@ -293,6 +304,67 @@ function UploadPage() {
       );
     }
   };
+  // Nowa funkcja: generuj thumbnail z video/image
+const generateThumbnailFromFile = async (file) => {
+  return new Promise((resolve) => {
+    if (file.type.startsWith('video/')) {
+      // Dla video - użyj pierwszej klatki
+      const video = document.createElement('video');
+      video.src = URL.createObjectURL(file);
+      video.muted = true;
+      video.playsInline = true;
+
+      video.onloadeddata = () => {
+        video.currentTime = 1; // 1 sekunda
+      };
+
+      video.onseeked = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 320;
+        canvas.height = (video.videoHeight / video.videoWidth) * 320;
+
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        canvas.toBlob((blob) => {
+          URL.revokeObjectURL(video.src);
+          resolve(blob);
+        }, 'image/jpeg', 0.85);
+      };
+
+      video.onerror = () => {
+        URL.revokeObjectURL(video.src);
+        resolve(null);
+      };
+
+    } else if (file.type.startsWith('image/')) {
+      // Dla obrazu - zresizuj
+      const img = new Image();
+      img.src = URL.createObjectURL(file);
+
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 320;
+        canvas.height = (img.height / img.width) * 320;
+
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+        canvas.toBlob((blob) => {
+          URL.revokeObjectURL(img.src);
+          resolve(blob);
+        }, 'image/jpeg', 0.85);
+      };
+
+      img.onerror = () => {
+        URL.revokeObjectURL(img.src);
+        resolve(null);
+      };
+    } else {
+      resolve(null);
+    }
+  });
+};
 
   const pendingCount = files.filter((f) => f.status === "pending").length;
   const uploadingCount = files.filter(
