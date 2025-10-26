@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertCircle, Loader } from "lucide-react";
+import VerticalVideoPlayer from "./VerticalVideoPlayer.jsx";
 
 /**
  * Vertical Feed Container - główny komponent
@@ -31,8 +32,10 @@ function VerticalFeed() {
         }
       );
 
-      if (!response.ok) throw new Error("Failed to fetch clips");
-
+      if (!response.ok) {
+        setError("Nie udało się załadować klipów");
+        return [];
+      }
       const data = await response.json();
       return data.clips;
     } catch (err) {
@@ -102,6 +105,9 @@ function VerticalFeed() {
   return (
     <div
       ref={containerRef}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
       className="h-screen overflow-y-scroll snap-y snap-mandatory"
       style={{
         scrollSnapType: "y mandatory",
@@ -129,5 +135,48 @@ function VerticalFeed() {
     </div>
   );
 }
+
+const [touchStart, setTouchStart] = useState(0);
+const [touchEnd, setTouchEnd] = useState(0);
+
+const handleTouchStart = (e) => {
+  setTouchStart(e.targetTouches[0].clientY);
+};
+
+const handleTouchMove = (e) => {
+  setTouchEnd(e.targetTouches[0].clientY);
+};
+
+const handleTouchEnd = () => {
+  if (!touchStart || !touchEnd) return;
+
+  const distance = touchStart - touchEnd;
+  const isSwipe = Math.abs(distance) > 50;
+
+  if (isSwipe) {
+    if (distance > 0) {
+      // Swipe up - następny klip
+      const nextIndex = currentIndex + 1;
+      if (nextIndex < clips.length) {
+        containerRef.current?.scrollTo({
+          top: nextIndex * window.innerHeight,
+          behavior: "smooth",
+        });
+      }
+    } else {
+      // Swipe down - poprzedni klip
+      const prevIndex = currentIndex - 1;
+      if (prevIndex >= 0) {
+        containerRef.current?.scrollTo({
+          top: prevIndex * window.innerHeight,
+          behavior: "smooth",
+        });
+      }
+    }
+  }
+
+  setTouchStart(0);
+  setTouchEnd(0);
+};
 
 export default VerticalFeed;
