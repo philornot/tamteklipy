@@ -108,7 +108,7 @@ function VerticalFeed() {
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
-      className="h-screen overflow-y-scroll snap-y snap-mandatory"
+        className="h-screen overflow-y-scroll snap-y snap-mandatory vertical-feed smooth-scroll"
       style={{
         scrollSnapType: "y mandatory",
         WebkitOverflowScrolling: "touch",
