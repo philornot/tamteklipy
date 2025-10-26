@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { AlertCircle, Volume2, VolumeX } from "lucide-react";
+import AwardButton from './AwardButton';
 
 /**
  * Vertical Video Player - pojedynczy klip
@@ -113,6 +114,7 @@ function VerticalVideoPlayer({ clip, isActive, onEnded }) {
           </div>
         </div>
       )}
+        <AwardButton clipId={clip.id} />
     </div>
   );
 }
