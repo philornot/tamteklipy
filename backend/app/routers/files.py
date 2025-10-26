@@ -237,7 +237,7 @@ async def get_random_clips(
     """
     Zwraca losowe klipy dla vertical feed (mobile TikTok-style).
     """
-    # Base query - wszystkie aktywne klipy (bez is_deleted)
+    # Base query — wszystkie aktywne klipy (bez is_deleted)
     query = db.query(Clip).filter(Clip.is_deleted == False)
 
     # Wykluczenie już wyświetlonych
@@ -291,27 +291,36 @@ async def get_random_clips(
     # Format response
     result = []
     for clip in clips:
-        # Agreguj award icons
+        # Agreguj award counts
         award_counts = {}
         for award in clip.awards:
             award_counts[award.award_name] = award_counts.get(award.award_name, 0) + 1
 
-        award_icons = []
+        # Format award icons properly using get_icon_info()
+        formatted_award_icons = []
         for award_name, count in award_counts.items():
             award_type = award_types_map.get(award_name)
-            icon_url = None
 
-            if award_type and award_type.custom_icon_path:
-                icon_url = f"/api/admin/award-types/{award_type.id}/icon"
-
-            award_icons.append({
-                "award_name": award_name,
-                "icon": award_type.icon if award_type else "🏆",
-                "lucide_icon": award_type.lucide_icon if award_type else None,
-                "icon_type": award_type.icon_type if award_type else "emoji",
-                "icon_url": icon_url,
-                "count": count
-            })
+            if award_type:
+                icon_info = award_type.get_icon_info()
+                formatted_award_icons.append({
+                    "award_name": award_name,
+                    "icon": award_type.icon,
+                    "lucide_icon": icon_info.get("icon_value") if icon_info["icon_type"] == "lucide" else None,
+                    "icon_type": icon_info["icon_type"],
+                    "icon_url": icon_info.get("icon_url"),
+                    "count": count
+                })
+            else:
+                # Fallback if award type not found
+                formatted_award_icons.append({
+                    "award_name": award_name,
+                    "icon": "🏆",
+                    "lucide_icon": None,
+                    "icon_type": "emoji",
+                    "icon_url": None,
+                    "count": count
+                })
 
         result.append({
             "id": clip.id,
@@ -326,7 +335,7 @@ async def get_random_clips(
             "uploader_username": clip.uploader.username,
             "uploader_id": clip.uploader_id,
             "award_count": len(clip.awards),
-            "award_icons": award_icons
+            "award_icons": formatted_award_icons
         })
 
     return {

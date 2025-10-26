@@ -1,18 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertCircle, Loader } from "lucide-react";
 import VerticalVideoPlayer from "./VerticalVideoPlayer.jsx";
+import { getStreamUrl } from "../../utils/urlHelper"; // IMPORT!
 
-/**
- * Vertical Feed Container - główny komponent
- */
 function VerticalFeed() {
   const [clips, setClips] = useState([]);
   const [loading, setLoading] = useState(true);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [error, setError] = useState(null);
-  const [pullDistance, setPullDistance] = useState(0);
-  const [refreshing, setRefreshing] = useState(false);
   const containerRef = useRef(null);
+
   const [touchStart, setTouchStart] = useState(0);
   const [touchEnd, setTouchEnd] = useState(0);
 
@@ -56,28 +53,36 @@ function VerticalFeed() {
     });
   }, [fetchClips]);
 
+  // Prefetch logic
   useEffect(() => {
-  if (clips.length > 0) {
-    // Prefetch następnych 2 klipów
-    const nextClips = clips.slice(currentIndex + 1, currentIndex + 3);
+    if (clips.length > 0 && currentIndex >= 0) {
+      const nextClips = clips.slice(currentIndex + 1, currentIndex + 3);
 
-    nextClips.forEach((clip) => {
-      const video = document.createElement('video');
-      video.preload = 'metadata';
-      video.src = getStreamUrl(clip.id);
+      const videos = [];
 
-      // Memory cleanup - usuń po 30s jeśli nie użyty
-      setTimeout(() => {
-        video.src = '';
+      nextClips.forEach((clip) => {
+        const video = document.createElement('video');
+        video.preload = 'metadata';
+        video.src = getStreamUrl(clip.id);
+        videos.push(video);
+      });
+
+      const cleanupTimer = setTimeout(() => {
+        videos.forEach(video => {
+          video.src = '';
+          video.load();
+        });
       }, 30000);
-    });
 
-    // Cleanup poprzednich (>3 klipy wstecz)
-    if (currentIndex > 3) {
-      // Browser GC powinien to obsłużyć automatycznie
+      return () => {
+        clearTimeout(cleanupTimer);
+        videos.forEach(video => {
+          video.src = '';
+          video.load();
+        });
+      };
     }
-  }
-}, [clips, currentIndex]);
+  }, [clips, currentIndex]);
 
   // Snap scroll handler
   const handleScroll = useCallback(() => {
@@ -108,11 +113,6 @@ function VerticalFeed() {
 
   const handleTouchMove = (e) => {
     setTouchEnd(e.targetTouches[0].clientY);
-
-    const distance = touchEnd - touchStart;
-    if (distance > 0 && containerRef.current?.scrollTop === 0) {
-      setPullDistance(Math.min(distance, 100));
-    }
   };
 
   const handleTouchEnd = () => {
@@ -143,35 +143,14 @@ function VerticalFeed() {
       }
     }
 
-    // Pull to refresh
-    if (pullDistance > 60 && !refreshing) {
-      setRefreshing(true);
-      fetchClips().then((newClips) => {
-        setClips(newClips);
-        setRefreshing(false);
-        setPullDistance(0);
-      });
-    }
-
     setTouchStart(0);
     setTouchEnd(0);
-    setPullDistance(0);
   };
 
   if (loading) {
     return (
       <div className="h-screen flex items-center justify-center bg-black">
-        <div className="text-center">
-          <Loader className="animate-spin text-purple-500 mx-auto mb-4" size={48} />
-          <p className="text-gray-400">Ładowanie klipów...</p>
-
-          {/* Skeleton */}
-          <div className="mt-8 space-y-4">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="w-48 h-2 bg-gray-800 rounded animate-pulse mx-auto" />
-            ))}
-          </div>
-        </div>
+        <Loader className="animate-spin text-purple-500" size={48} />
       </div>
     );
   }
@@ -201,7 +180,7 @@ function VerticalFeed() {
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
-        className="h-screen overflow-y-scroll snap-y snap-mandatory vertical-feed smooth-scroll"
+      className="h-screen overflow-y-scroll snap-y snap-mandatory vertical-feed smooth-scroll"
       style={{
         scrollSnapType: "y mandatory",
         WebkitOverflowScrolling: "touch",
