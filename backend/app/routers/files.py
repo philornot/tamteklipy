@@ -34,14 +34,6 @@ from app.services.file_processor import (
     save_file_to_disk, create_clip_record,
     get_storage_directory
 )
-from app.services.file_validator import (
-    validate_file_type, validate_file_size,
-    generate_unique_filename, check_disk_space
-)
-from app.services.file_validator import (
-    validate_file_type, validate_file_size,
-    generate_unique_filename, check_disk_space
-)
 from app.services.thumbnail_service import extract_video_metadata
 from app.utils.file_helpers import can_access_clip
 from fastapi import APIRouter, UploadFile, File, Depends, BackgroundTasks, Request, Response
