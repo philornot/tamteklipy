@@ -52,6 +52,29 @@ function VerticalFeed() {
     });
   }, [fetchClips]);
 
+  useEffect(() => {
+  if (clips.length > 0) {
+    // Prefetch następnych 2 klipów
+    const nextClips = clips.slice(currentIndex + 1, currentIndex + 3);
+
+    nextClips.forEach((clip) => {
+      const video = document.createElement('video');
+      video.preload = 'metadata';
+      video.src = getStreamUrl(clip.id);
+
+      // Memory cleanup - usuń po 30s jeśli nie użyty
+      setTimeout(() => {
+        video.src = '';
+      }, 30000);
+    });
+
+    // Cleanup poprzednich (>3 klipy wstecz)
+    if (currentIndex > 3) {
+      // Browser GC powinien to obsłużyć automatycznie
+    }
+  }
+}, [clips, currentIndex]);
+
   // Snap scroll handler
   const handleScroll = useCallback(() => {
     if (!containerRef.current) return;
