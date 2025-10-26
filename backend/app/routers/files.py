@@ -1,5 +1,5 @@
 """
-Router dla zarządzania plikami - PRODUCTION READY
+Router dla zarządzania plikami
 Tylko endpointy, logika w services
 """
 import io

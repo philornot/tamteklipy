@@ -1,4 +1,3 @@
-// frontend/src/components/layout/MobileNavBar.jsx
 import { Award, Home, User, Shield } from 'lucide-react';
 
 /**
