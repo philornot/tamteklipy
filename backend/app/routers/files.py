@@ -115,54 +115,38 @@ async def upload_file(
         db=Depends(get_db),
         current_user: User = Depends(get_current_user)
 ):
-    """
-    Upload pliku z opcjonalnym thumbnail z frontendu
-
-    ZMIANY:
-    - Usunięto ffprobe (timeout >15s, wolniejsze niż thumbnail z frontendu)
-    - Metadata (resolution, duration) są NULL - będą uzupełnione przez background task
-    - Priorytet: thumbnail z frontendu > background generation
-    """
+    """Upload pliku z opcjonalnym thumbnail z frontendu"""
     logger.info(f"Upload from {current_user.username}: {file.filename}")
 
     try:
-        # 1. Walidacja typu pliku
-        clip_type, extension = validate_file_type(file.content_type)
+        validated = ValidatedFile(uploaded_file=file)
 
-        # 2. Odczyt zawartości
-        file_content = await file.read()
-        file_size = len(file_content)
+        # Sprawdź dostępne miejsce
+        storage_dir = get_storage_directory(validated.clip_type)
+        check_disk_space(storage_dir, validated.size_bytes)
 
-        # 3. Walidacja rozmiaru
-        validate_file_size(file_size, clip_type)
-
-        # 4. Generowanie unikalnej nazwy
-        unique_filename = generate_unique_filename(file.filename, extension)
-
-        # 5. Sprawdzenie dostępnego miejsca
-        storage_dir = get_storage_directory(clip_type)
-        check_disk_space(storage_dir, file_size)
-
-        # 6. Zapis pliku na dysku
-        file_path = await save_file_to_disk(file_content, unique_filename, clip_type)
+        # Zapis pliku na dysku (używa validated.content i validated.unique_filename)
+        file_path = await save_file_to_disk(
+            validated.content,
+            validated.unique_filename,
+            validated.clip_type
+        )
         logger.info(f"File saved: {file_path}")
 
-        # 7. ❌ USUNIĘTO: ffprobe metadata extraction
-        # Powód: timeout >15s, wolniejsze niż thumbnail z frontendu
-        # Metadata będą uzupełnione przez background task jeśli potrzebne
+        # Metadata będą uzupełnione w tle
         metadata = None
 
-        # 8. Utwórz rekord w bazie (bez metadata — będą NULL)
+        # Utwórz rekord w bazie
         new_clip = await create_clip_record(
             db=db,
-            filename=file.filename,
+            filename=validated.original_filename,
             file_path=file_path,
-            file_size=file_size,
-            clip_type=clip_type,
+            file_size=validated.size_bytes,
+            clip_type=validated.clip_type,
             uploader_id=current_user.id,
-            thumbnail_path=None,  # Uzupełnimy za chwilę
+            thumbnail_path=None,
             thumbnail_webp_path=None,
-            metadata=metadata  # None — będzie uzupełnione w tle jeśli potrzebne
+            metadata=metadata
         )
         logger.info(f"Clip created: ID={new_clip.id}")
 
