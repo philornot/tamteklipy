@@ -9,6 +9,8 @@ import { getBaseUrl } from "../utils/urlHelper";
 import usePageTitle from "../hooks/usePageTitle.js";
 import { Button, Card, Badge } from "../components/ui/StyledComponents";
 import { logger } from "../utils/logger";
+import useIsMobile from '../hooks/useIsMobile';
+import MobileAwardsList from '../components/awards/MobileAwardsList';
 
 function MyAwardsPage() {
   usePageTitle("Moje nagrody");
@@ -17,6 +19,7 @@ function MyAwardsPage() {
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingAward, setEditingAward] = useState(null);
+  const isMobile = useIsMobile();
 
   useEffect(() => {
     fetchData();
@@ -166,84 +169,93 @@ function MyAwardsPage() {
         </Card>
       ) : (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
-            {customAwards.map((award) => {
-              const awardType = awardTypesMap[award.id];
+          {isMobile ? (
+            <MobileAwardsList
+              awards={customAwards}
+              awardTypesMap={awardTypesMap}
+              onEdit={setEditingAward}
+              onDelete={handleDelete}
+            />
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+              {customAwards.map((award) => {
+                const awardType = awardTypesMap[award.id];
 
-              return (
-                <Card
-                  key={award.id}
-                  hoverable
-                  className="p-5"
-                >
-                  <div className="flex items-start gap-4 mb-4">
-                    <div className="flex-shrink-0">{renderIcon(award)}</div>
+                return (
+                  <Card
+                    key={award.id}
+                    hoverable
+                    className="p-5"
+                  >
+                    <div className="flex items-start gap-4 mb-4">
+                      <div className="flex-shrink-0">{renderIcon(award)}</div>
 
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <h3 className="font-semibold text-lg truncate">
-                          {award.display_name}
-                        </h3>
-                        {award.is_personal && (
-                          <Badge variant="primary">
-                            Imienna
-                          </Badge>
-                        )}
-                      </div>
-
-                      <p className="text-sm text-gray-400 mb-3 line-clamp-2">
-                        {award.description || "Brak opisu"}
-                      </p>
-
-                      <div className="flex items-center gap-3 text-xs text-gray-500">
-                        <div className="flex items-center gap-1.5">
-                          <div
-                            className="w-4 h-4 rounded border border-gray-600"
-                            style={{ backgroundColor: award.color }}
-                          />
-                          <span>{award.color}</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <h3 className="font-semibold text-lg truncate">
+                            {award.display_name}
+                          </h3>
+                          {award.is_personal && (
+                            <Badge variant="primary">
+                              Imienna
+                            </Badge>
+                          )}
                         </div>
 
-                        <span className="text-gray-600">•</span>
+                        <p className="text-sm text-gray-400 mb-3 line-clamp-2">
+                          {award.description || "Brak opisu"}
+                        </p>
 
-                        <span>{getIconTypeLabel(award)}</span>
+                        <div className="flex items-center gap-3 text-xs text-gray-500">
+                          <div className="flex items-center gap-1.5">
+                            <div
+                              className="w-4 h-4 rounded border border-gray-600"
+                              style={{ backgroundColor: award.color }}
+                            />
+                            <span>{award.color}</span>
+                          </div>
+
+                          <span className="text-gray-600">•</span>
+
+                          <span>{getIconTypeLabel(award)}</span>
+                        </div>
                       </div>
                     </div>
-                  </div>
 
-                  <div className="flex gap-2 pt-3 border-t border-dark-700">
-                    <Button
-                      onClick={() => setEditingAward(award)}
-                      variant="ghost"
-                      size="sm"
-                      className="flex-1 text-primary-400"
-                    >
-                      <Edit2 size={16} />
-                      Edytuj
-                    </Button>
-
-                    {!award.is_personal && (
+                    <div className="flex gap-2 pt-3 border-t border-dark-700">
                       <Button
-                        onClick={() => handleDelete(award.id, award.display_name)}
+                        onClick={() => setEditingAward(award)}
                         variant="ghost"
                         size="sm"
-                        className="flex-1 text-red-400 hover:text-red-300"
+                        className="flex-1 text-primary-400"
                       >
-                        <Trash2 size={16} />
-                        Usuń
+                        <Edit2 size={16} />
+                        Edytuj
                       </Button>
-                    )}
 
-                    {award.is_personal && (
-                      <div className="flex-1 py-2 px-3 text-gray-500 text-center text-sm">
-                        Chroniona
-                      </div>
-                    )}
-                  </div>
-                </Card>
-              );
-            })}
-          </div>
+                      {!award.is_personal && (
+                        <Button
+                          onClick={() => handleDelete(award.id, award.display_name)}
+                          variant="ghost"
+                          size="sm"
+                          className="flex-1 text-red-400 hover:text-red-300"
+                        >
+                          <Trash2 size={16} />
+                          Usuń
+                        </Button>
+                      )}
+
+                      {award.is_personal && (
+                        <div className="flex-1 py-2 px-3 text-gray-500 text-center text-sm">
+                          Chroniona
+                        </div>
+                      )}
+                    </div>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
 
           <Card variant="glow" className="p-4">
             <h3 className="font-semibold mb-2 text-sm flex items-center gap-2 text-primary-400">
