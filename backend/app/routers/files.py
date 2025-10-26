@@ -8,7 +8,8 @@ import zipfile
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import List, Optional
+from typing import List
+from typing import Optional
 
 import aiofiles
 from app.core.config import settings
@@ -37,9 +38,11 @@ from app.services.file_processor import (
 from app.services.thumbnail_service import extract_video_metadata
 from app.utils.file_helpers import can_access_clip
 from fastapi import APIRouter, UploadFile, File, Depends, BackgroundTasks, Request, Response
+from fastapi import Query
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import desc, asc
+from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload, joinedload
 
 router = APIRouter()
@@ -1254,4 +1257,111 @@ async def generate_thumbnail_on_demand(
         "message": "Thumbnail generation started",
         "clip_id": clip_id,
         "status": "processing"
+    }
+
+
+@router.get("/clips/random")
+async def get_random_clips(
+        limit: int = Query(10, le=50, description="Max liczba klipów do zwrócenia"),
+        exclude_ids: List[int] = Query([], description="ID klipów do pominięcia"),
+        prefer_awarded: bool = Query(False, description="Preferuj klipy z nagrodami"),
+        current_user: User = Depends(get_current_user),
+        db: Session = Depends(get_db)
+):
+    """
+    Zwraca losowe klipy dla vertical feed (mobile TikTok-style).
+
+    Features:
+    - Losowa kolejność (SQL RANDOM())
+    - Wykluczanie już wyświetlonych klipów
+    - Opcjonalne preferowanie klipów z nagrodami
+    - Pełne dane (thumbnail, stream URL, awards)
+    """
+
+    # Base query - wszystkie aktywne klipy
+    query = db.query(Clip).filter(Clip.is_active == True)
+
+    # Wykluczenie już wyświetlonych
+    if exclude_ids:
+        query = query.filter(~Clip.id.in_(exclude_ids))
+
+    # Preferuj klipy z nagrodami (opcjonalnie)
+    if prefer_awarded:
+        # Subquery: klipy z nagrodami
+        awarded_clips = (
+            db.query(Award.clip_id)
+            .group_by(Award.clip_id)
+            .subquery()
+        )
+
+        # Sortuj: najpierw z nagrodami, potem losowo
+        query = query.outerjoin(
+            awarded_clips,
+            Clip.id == awarded_clips.c.clip_id
+        ).order_by(
+            awarded_clips.c.clip_id.isnot(None).desc(),
+            func.random()
+        )
+    else:
+        # Zwykła losowa kolejność
+        query = query.order_by(func.random())
+
+    # Limit
+    clips = query.limit(limit).all()
+
+    # Format response - taki sam jak GET /clips
+    result = []
+    for clip in clips:
+        # Pobierz award icons (agregacja)
+        award_icons = (
+            db.query(
+                AwardType.name.label('award_name'),
+                AwardType.icon,
+                AwardType.lucide_icon,
+                AwardType.icon_type,
+                AwardType.icon_url.label('icon_url'),
+                func.count(Award.id).label('count')
+            )
+            .join(Award, Award.award_name == AwardType.name)
+            .filter(Award.clip_id == clip.id)
+            .group_by(
+                AwardType.name,
+                AwardType.icon,
+                AwardType.lucide_icon,
+                AwardType.icon_type,
+                AwardType.icon_url
+            )
+            .all()
+        )
+
+        result.append({
+            "id": clip.id,
+            "filename": clip.filename,
+            "clip_type": clip.clip_type,
+            "file_size_mb": round(clip.file_size / (1024 * 1024), 2),
+            "duration": clip.duration,
+            "width": clip.width,
+            "height": clip.height,
+            "has_thumbnail": clip.has_thumbnail,
+            "created_at": clip.created_at.isoformat(),
+            "uploader_username": clip.uploader.username,
+            "uploader_id": clip.uploader_id,
+            "award_count": len(clip.awards),
+            "award_icons": [
+                {
+                    "award_name": icon.award_name,
+                    "icon": icon.icon,
+                    "lucide_icon": icon.lucide_icon,
+                    "icon_type": icon.icon_type,
+                    "icon_url": icon.icon_url,
+                    "count": icon.count
+                }
+                for icon in award_icons
+            ]
+        })
+
+    return {
+        "clips": result,
+        "total": len(result),
+        "has_more": len(result) == limit  # Heurystyka: jeśli zwrócono limit, prawdopodobnie jest więcej
     }
