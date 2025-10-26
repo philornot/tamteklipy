@@ -10,7 +10,11 @@ function VerticalFeed() {
   const [loading, setLoading] = useState(true);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [error, setError] = useState(null);
+  const [pullDistance, setPullDistance] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
   const containerRef = useRef(null);
+  const [touchStart, setTouchStart] = useState(0);
+  const [touchEnd, setTouchEnd] = useState(0);
 
   // Fetch initial clips
   const fetchClips = useCallback(async (excludeIds = []) => {
@@ -98,10 +102,76 @@ function VerticalFeed() {
     }
   }, [currentIndex, clips, fetchClips]);
 
+  const handleTouchStart = (e) => {
+    setTouchStart(e.targetTouches[0].clientY);
+  };
+
+  const handleTouchMove = (e) => {
+    setTouchEnd(e.targetTouches[0].clientY);
+
+    const distance = touchEnd - touchStart;
+    if (distance > 0 && containerRef.current?.scrollTop === 0) {
+      setPullDistance(Math.min(distance, 100));
+    }
+  };
+
+  const handleTouchEnd = () => {
+    if (!touchStart || !touchEnd) return;
+
+    const distance = touchStart - touchEnd;
+    const isSwipe = Math.abs(distance) > 50;
+
+    if (isSwipe) {
+      if (distance > 0) {
+        // Swipe up - następny klip
+        const nextIndex = currentIndex + 1;
+        if (nextIndex < clips.length) {
+          containerRef.current?.scrollTo({
+            top: nextIndex * window.innerHeight,
+            behavior: "smooth",
+          });
+        }
+      } else {
+        // Swipe down - poprzedni klip
+        const prevIndex = currentIndex - 1;
+        if (prevIndex >= 0) {
+          containerRef.current?.scrollTo({
+            top: prevIndex * window.innerHeight,
+            behavior: "smooth",
+          });
+        }
+      }
+    }
+
+    // Pull to refresh
+    if (pullDistance > 60 && !refreshing) {
+      setRefreshing(true);
+      fetchClips().then((newClips) => {
+        setClips(newClips);
+        setRefreshing(false);
+        setPullDistance(0);
+      });
+    }
+
+    setTouchStart(0);
+    setTouchEnd(0);
+    setPullDistance(0);
+  };
+
   if (loading) {
     return (
       <div className="h-screen flex items-center justify-center bg-black">
-        <Loader className="animate-spin text-purple-500" size={48} />
+        <div className="text-center">
+          <Loader className="animate-spin text-purple-500 mx-auto mb-4" size={48} />
+          <p className="text-gray-400">Ładowanie klipów...</p>
+
+          {/* Skeleton */}
+          <div className="mt-8 space-y-4">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="w-48 h-2 bg-gray-800 rounded animate-pulse mx-auto" />
+            ))}
+          </div>
+        </div>
       </div>
     );
   }
@@ -158,48 +228,5 @@ function VerticalFeed() {
     </div>
   );
 }
-
-const [touchStart, setTouchStart] = useState(0);
-const [touchEnd, setTouchEnd] = useState(0);
-
-const handleTouchStart = (e) => {
-  setTouchStart(e.targetTouches[0].clientY);
-};
-
-const handleTouchMove = (e) => {
-  setTouchEnd(e.targetTouches[0].clientY);
-};
-
-const handleTouchEnd = () => {
-  if (!touchStart || !touchEnd) return;
-
-  const distance = touchStart - touchEnd;
-  const isSwipe = Math.abs(distance) > 50;
-
-  if (isSwipe) {
-    if (distance > 0) {
-      // Swipe up - następny klip
-      const nextIndex = currentIndex + 1;
-      if (nextIndex < clips.length) {
-        containerRef.current?.scrollTo({
-          top: nextIndex * window.innerHeight,
-          behavior: "smooth",
-        });
-      }
-    } else {
-      // Swipe down - poprzedni klip
-      const prevIndex = currentIndex - 1;
-      if (prevIndex >= 0) {
-        containerRef.current?.scrollTo({
-          top: prevIndex * window.innerHeight,
-          behavior: "smooth",
-        });
-      }
-    }
-  }
-
-  setTouchStart(0);
-  setTouchEnd(0);
-};
 
 export default VerticalFeed;
