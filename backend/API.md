@@ -161,7 +161,7 @@ Anuluj chunked upload.
 
 ### GET `/files/clips`
 
-Lista klipów z paginacją i filtrowaniem. Cache 30s.
+Lista klipów z paginacją i filtrowaniem.
 
 **Query params**:
 - `page` (default: 1)
@@ -214,7 +214,7 @@ Lista klipów z paginacją i filtrowaniem. Cache 30s.
 
 ### GET `/files/clips/{clip_id}`
 
-Szczegóły klipa z nagrodami. Cache 5min.
+Szczegóły klipa z nagrodami.
 
 **Response** (200):
 ```json
@@ -315,7 +315,7 @@ Masowa operacja na klipach (max 100).
 
 ### GET `/files/thumbnails/{clip_id}` (PUBLIC)
 
-Pobierz miniaturę (WebP preferred, JPEG fallback). Cache 1h.
+Pobierz miniaturę (WebP preferred, JPEG fallback).
 
 **Headers**: `Accept: image/webp`
 
@@ -329,7 +329,7 @@ Stream video z Range requests.
 
 **Headers**: `Range: bytes=0-1023`
 
-**Response**: 200 (full) / 206 (partial). Cache 1h.
+**Response**: 200 (full) / 206 (partial).
 
 ---
 
@@ -557,7 +557,7 @@ Dodaj komentarz.
 
 ### GET `/clips/{clip_id}/comments`
 
-Lista komentarzy z replies. Cache 30s.
+Lista komentarzy z replies.
 
 **Query**: `page`, `limit` (max 100)
 
@@ -727,7 +727,7 @@ Upload ikony (PNG/JPG/WebP, max 500KB).
 
 ### GET `/admin/award-types/{award_type_id}/icon`
 
-Pobierz ikonę. Cache 24h.
+Pobierz ikonę.
 
 **Response**: PNG/JPG/WebP
 
@@ -949,7 +949,6 @@ Usuń nagrodę (admin only).
 
 ## Uwagi techniczne
 
-- **Cache**: Redis (prod) / InMemory (dev)
 - **Storage**: `/home/filip/tamteklipy_storage` (prod) / `./uploads` (dev)
 - **Thumbnails**: JPEG (fallback) + WebP (primary), generowane przez FFmpeg
 - **Chunked upload**: 5MB chunks, SHA256 verification

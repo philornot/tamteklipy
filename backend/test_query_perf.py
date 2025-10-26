@@ -15,7 +15,7 @@ from sqlalchemy.orm import joinedload, selectinload
 from app.core.database import SessionLocal
 from app.models.clip import Clip
 from app.models.award import Award
-from app.core.init_db import init_db  # ...added import
+from app.core.init_db import init_db
 from app.core.logging_config import setup_logging
 
 # Spójna konfiguracja logowania

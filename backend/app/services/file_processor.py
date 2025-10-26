@@ -184,13 +184,3 @@ async def create_clip_record(
             message="Nie można zapisać do bazy danych",
             operation="create_clip"
         )
-
-
-async def invalidate_clips_cache():
-    """Invaliduje cache klipów"""
-    try:
-        from app.core.cache import invalidate_cache
-        await invalidate_cache("clips:*")
-        logger.info("Cache invalidated")
-    except Exception as e:
-        logger.warning(f"Failed to invalidate cache: {e}")

@@ -6,13 +6,11 @@ Architektura:
 - Backend: FastAPI REST API
 - Deployment: Cloudflare Tunnel → RPi (localhost:8001)
 - Database: SQLite
-- Cache: Redis (production) / InMemory (dev)
 """
 import logging
 import time
 from pathlib import Path
 
-from app.core.cache import init_cache
 from app.core.config import settings
 from app.core.database import engine
 from app.core.error_handlers import (
@@ -84,54 +82,6 @@ app.add_middleware(
 )
 
 
-# ───────────────────────────────────────────────────────────────────────────────
-# MIDDLEWARE - REQUEST LOGGING & TIMING
-# ───────────────────────────────────────────────────────────────────────────────
-@app.middleware("http")
-async def log_requests(request: Request, call_next):
-    """
-    Custom middleware do:
-    - Logowania wszystkich requestów
-    - Mierzenia czasu odpowiedzi
-    - Debugowania cache headers
-    """
-    start_time = time.time()
-
-    # Debug: Loguj cache-related headers z requesta
-    cache_headers = {
-        "if-none-match": request.headers.get("if-none-match"),
-        "if-modified-since": request.headers.get("if-modified-since"),
-        "cache-control": request.headers.get("cache-control"),
-    }
-    logger.debug(f"Cache headers (request): {cache_headers}")
-
-    # Wykonaj request
-    response = await call_next(request)
-
-    # Zmierz czas wykonania
-    process_time = time.time() - start_time
-    response.headers["X-Process-Time"] = str(process_time)
-
-    # Debug: Loguj cache headers z response
-    response_cache_headers = {
-        "etag": response.headers.get("etag"),
-        "cache-control": response.headers.get("cache-control"),
-        "expires": response.headers.get("expires"),
-    }
-    logger.debug(f"Cache headers (response): {response_cache_headers}")
-
-    # Cache status (MISS/HIT) - dodawany przez fastapi-cache
-    cache_status = response.headers.get("X-Cache", "MISS")
-    logger.debug(f"Cache status: {cache_status}")
-
-    # Loguj każdy request z metrykami
-    logger.info(
-        f"Response: {request.method} {request.url.path} "
-        f"[Status: {response.status_code}] [Time: {process_time:.3f}s] [Cache: {cache_status}]"
-    )
-
-    return response
-
 
 # ───────────────────────────────────────────────────────────────────────────────
 # STARTUP EVENT
@@ -158,18 +108,7 @@ async def startup_event():
         logger.error(f"Błąd inicjalizacji bazy danych: {e}")
 
     # 2. Inicjalizuj cache
-    # - Redis w produkcji (szybki, współdzielony między workerami)
-    # - InMemoryBackend w dev (prosty, lokalny)
-    try:
-        redis_url = settings.redis_url
-        init_cache(redis_url=redis_url)
-        if redis_url:
-            logger.info(f"Cache initialized with Redis: {redis_url}")
-        else:
-            logger.info("Cache initialized with InMemoryBackend")
-    except Exception as e:
-        logger.error(f"Redis cache init failed: {e}, falling back to InMemory")
-        init_cache(redis_url=None)
+    # CACHE ZOSTAŁO USUNIĘTE TK-603
 
     # 3. Utwórz katalog na ikony nagród
     try:
@@ -245,7 +184,6 @@ if frontend_dist.exists():
         Sprawdza:
         - Status API (online/offline)
         - Połączenie z bazą danych
-        - Status cache (Redis/InMemory)
         - Dostęp do storage (tylko w produkcji)
 
         Zwraca:
@@ -277,19 +215,7 @@ if frontend_dist.exists():
             health_status["status"] = "degraded"
 
         # Check 2: Cache
-        try:
-            from fastapi_cache import FastAPICache
-            backend = FastAPICache.get_backend()
-            health_status["checks"]["cache"] = {
-                "status": "ok",
-                "backend": type(backend).__name__  # RedisBackend lub InMemoryBackend
-            }
-        except Exception as e:
-            logger.error(f"Cache check failed: {e}")
-            health_status["checks"]["cache"] = {
-                "status": "error",
-                "error": str(e)
-            }
+        # CACHE ZOSTAŁO USUNIĘTE - TK-603
 
         # Check 3: Storage (tylko w produkcji - na RPi)
         if settings.environment == "production":

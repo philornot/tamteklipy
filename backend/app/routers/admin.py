@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import List
 from typing import Optional
 
-from app.core.cache import invalidate_cache
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
@@ -465,12 +464,6 @@ async def delete_clip(
         clip.is_deleted = True
         db.commit()
 
-        try:
-            await invalidate_cache("clips:*")
-            logger.info("Cache invalidated after clip deletion")
-        except Exception as e:
-            logger.warning(f"Failed to invalidate cache: {e}")
-
         logger.info(f"Admin {admin_user.username} deleted clip {clip_id} ({clip.filename})")
 
         return {
@@ -516,12 +509,6 @@ async def restore_clip(
         # Przywróć klip
         clip.is_deleted = False
         db.commit()
-
-        try:
-            await invalidate_cache("clips:*")
-            logger.info("Cache invalidated after clip restore")
-        except Exception as e:
-            logger.warning(f"Failed to invalidate cache: {e}")
 
         logger.info(f"Admin {admin_user.username} restored clip {clip_id} ({clip.filename})")
 

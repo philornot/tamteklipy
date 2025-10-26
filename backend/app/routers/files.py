@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import List, Optional
 
 import aiofiles
-from app.core.cache import cache_key_builder
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.dependencies import get_current_user, get_current_user_flexible
@@ -29,11 +28,11 @@ from app.services.background_tasks import process_thumbnail_background
 from app.services.background_tasks import process_thumbnail_background
 from app.services.file_processor import (
     save_file_to_disk, create_clip_record,
-    invalidate_clips_cache, get_storage_directory
+    get_storage_directory
 )
 from app.services.file_processor import (
     save_file_to_disk, create_clip_record,
-    invalidate_clips_cache, get_storage_directory
+    get_storage_directory
 )
 from app.services.file_validator import (
     validate_file_type, validate_file_size,
@@ -47,7 +46,6 @@ from app.services.thumbnail_service import extract_video_metadata
 from app.utils.file_helpers import can_access_clip
 from fastapi import APIRouter, UploadFile, File, Depends, BackgroundTasks, Request, Response
 from fastapi.responses import FileResponse, StreamingResponse
-from fastapi_cache.decorator import cache
 from pydantic import BaseModel, Field
 from sqlalchemy import desc, asc
 from sqlalchemy.orm import Session, selectinload, joinedload
@@ -150,10 +148,6 @@ async def upload_file(
         )
         logger.info(f"Clip created: ID={new_clip.id}")
 
-        # 9. Obsłuż thumbnail (mamy już new_clip.id)
-        thumbnail_path = None
-        thumbnail_webp_path = None
-
         if thumbnail:
             try:
                 # Przygotuj katalog
@@ -203,7 +197,7 @@ async def upload_file(
             logger.info(f"Thumbnail generation queued (backend fallback)")
 
         # 11. Invalidacja cache
-        await invalidate_clips_cache()
+        # CACHE USUNIĘTE - TK-603
 
         # 12. Response
         return {
@@ -238,9 +232,7 @@ async def upload_file(
 # ============================================================================
 
 @router.get("/clips", response_model=ClipListResponse)
-@cache(expire=30, key_builder=cache_key_builder)
 async def list_clips(
-        request: Request,
         response: Response,
         page: int = 1,
         limit: int = 50,
@@ -249,7 +241,6 @@ async def list_clips(
         clip_type: Optional[str] = None,
         uploader_id: Optional[int] = None,
         db: Session = Depends(get_db),
-        current_user: User = Depends(get_current_user)
 ):
     """
     Listowanie klipów z paginacją, sortowaniem i filtrowaniem
@@ -406,12 +397,9 @@ async def list_clips(
 
 
 @router.get("/clips/{clip_id}", response_model=ClipDetailResponse)
-@cache(expire=300, key_builder=cache_key_builder)
 async def get_clip(
-        request: Request,
         clip_id: int,
         db: Session = Depends(get_db),
-        current_user: User = Depends(get_current_user)
 ):
     """
     Szczegóły pojedynczego klipa
@@ -669,7 +657,7 @@ async def bulk_action(
                 field="tags"
             )
         result = await bulk_action_add_tags(
-            request.clip_ids, request.tags, db, current_user
+            request.clip_ids
         )
         message = f"Dodano tagi do {result['processed']} klipów"
 
@@ -680,7 +668,7 @@ async def bulk_action(
                 field="session_name"
             )
         result = await bulk_action_add_to_session(
-            request.clip_ids, request.session_name, db, current_user
+            request.clip_ids,
         )
         message = f"Dodano {result['processed']} klipów do sesji"
 
@@ -761,7 +749,6 @@ async def bulk_action_delete(
     # Commit zmian
     try:
         db.commit()
-        await invalidate_clips_cache()
         logger.info(f"Bulk delete completed: {processed} processed, {failed} failed")
     except Exception as e:
         db.rollback()
@@ -779,10 +766,7 @@ async def bulk_action_delete(
 
 
 async def bulk_action_add_tags(
-        clip_ids: List[int],
-        tags: List[str],
-        db: Session,
-        current_user: User
+        clip_ids: List[int]
 ) -> dict:
     """
     Masowe dodawanie tagów (placeholder - wymaga modelu Tag)
@@ -799,9 +783,6 @@ async def bulk_action_add_tags(
 
 async def bulk_action_add_to_session(
         clip_ids: List[int],
-        session_name: str,
-        db: Session,
-        current_user: User
 ) -> dict:
     """
     Masowe dodawanie do sesji (placeholder - wymaga modelu Session)
@@ -833,12 +814,6 @@ async def get_thumbnail(
     - Sprawdza Accept header
     - Zwraca WebP jeśli dostępne i wspierane
     - Fallback do JPEG
-
-    **Cache:**
-    - Cache-Control: public, max-age=3600
-
-    **Uwaga:**
-    Endpoint publiczny (bez autoryzacji) aby umożliwić prefetch przez przeglądarkę
     """
     clip = db.query(Clip).filter(
         Clip.id == clip_id,
@@ -884,7 +859,6 @@ async def get_thumbnail(
 async def get_thumbnail_status(
         clip_id: int,
         db: Session = Depends(get_db),
-        current_user: User = Depends(get_current_user)
 ):
     """
     Sprawdzenie statusu generowania thumbnail
@@ -1168,7 +1142,6 @@ async def hard_delete_clip(
     try:
         db.delete(clip)
         db.commit()
-        await invalidate_clips_cache()
         logger.info(f"Hard deleted clip {clip_id} by {current_user.username}")
     except Exception as e:
         db.rollback()
@@ -1243,8 +1216,6 @@ async def regenerate_thumbnail(
         clip_type=clip.clip_type
     )
 
-    await invalidate_clips_cache()
-
     logger.info(f"Thumbnail regeneration queued for clip {clip_id}")
 
     return {
@@ -1259,7 +1230,6 @@ async def generate_thumbnail_on_demand(
         clip_id: int,
         background_tasks: BackgroundTasks,
         db: Session = Depends(get_db),
-        current_user: User = Depends(get_current_user)
 ):
     """
     Generuje thumbnail on-demand dla klipa który go nie ma.

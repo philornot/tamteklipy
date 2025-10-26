@@ -4,9 +4,8 @@ Router dla systemu komentarzy
 import logging
 import re
 from datetime import datetime
-from typing import List, Optional
+from typing import List
 
-from app.core.cache import cache_key_builder, invalidate_cache
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.core.exceptions import NotFoundError, ValidationError, AuthorizationError
@@ -22,8 +21,7 @@ from app.schemas.comment import (
     MentionSuggestion,
     CommentUserInfo
 )
-from fastapi import APIRouter, Depends, Request, Response
-from fastapi_cache.decorator import cache
+from fastapi import APIRouter, Depends
 from sqlalchemy import desc, func
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, joinedload
@@ -193,13 +191,6 @@ async def create_comment(
 
         logger.info(f"Comment created: ID={new_comment.id}, clip={clip_id}, user={current_user.username}")
 
-        # Invaliduj cache dla tego klipa
-        try:
-            await invalidate_cache(f"clips:{clip_id}:comments:*")
-            await invalidate_cache(f"clips:{clip_id}")  # Invaliduj też details klipa (licznik komentarzy)
-        except Exception as e:
-            logger.warning(f"Failed to invalidate cache: {e}")
-
         return build_comment_response(new_comment, current_user, db)
 
     except SQLAlchemyError as e:
@@ -213,10 +204,7 @@ async def create_comment(
 
 
 @router.get("/clips/{clip_id}/comments", response_model=CommentListResponse)
-@cache(expire=30, key_builder=cache_key_builder)
 async def get_comments(
-        request: Request,
-        response: Response,
         clip_id: int,
         page: int = 1,
         limit: int = 20,
@@ -332,12 +320,6 @@ async def update_comment(
 
         logger.info(f"Comment updated: ID={comment_id}, user={current_user.username}")
 
-        # Invaliduj cache
-        try:
-            await invalidate_cache(f"clips:{comment.clip_id}:comments:*")
-        except Exception as e:
-            logger.warning(f"Failed to invalidate cache: {e}")
-
         return build_comment_response(comment, current_user, db)
 
     except SQLAlchemyError as e:
@@ -383,13 +365,6 @@ async def delete_comment(
         db.commit()
 
         logger.info(f"Comment deleted: ID={comment_id}, user={current_user.username}")
-
-        # Invaliduj cache
-        try:
-            await invalidate_cache(f"clips:{comment.clip_id}:comments:*")
-            await invalidate_cache(f"clips:{comment.clip_id}")
-        except Exception as e:
-            logger.warning(f"Failed to invalidate cache: {e}")
 
         return {"message": "Komentarz został usunięty"}
 

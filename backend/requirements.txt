@@ -10,5 +10,3 @@ email-validator
 alembic
 aiofiles==23.2.1
 pytest
-fastapi-cache2==0.2.1
-redis==5.0.1
