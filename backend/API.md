@@ -128,37 +128,6 @@ Upload klipa lub screenshota (standard, do 500MB).
 
 ---
 
-### POST `/files/upload-chunk`
-
-Chunked upload dla dużych plików (>500MB).
-
-**Body** (form-data):
-```
-chunk: File
-upload_id: string (UUID)
-chunk_number: int (0-based)
-total_chunks: int
-filename: string
-file_hash: string (SHA256, optional)
-```
-
-**Response** (200):
-```json
-{
-  "upload_id": "uuid",
-  "chunk_number": 0,
-  "total_chunks": 10,
-  "received": true,
-  "complete": false,
-  "clip_id": null,
-  "message": "Chunk received"
-}
-```
-
-**Note**: Po ostatnim chunku `complete=true` i zwraca `clip_id`. Thumbnail generowany w tle.
-
----
-
 ### GET `/files/upload-status/{upload_id}`
 
 Status chunked uploadu.
