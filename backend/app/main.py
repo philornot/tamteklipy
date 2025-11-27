@@ -202,8 +202,10 @@ if frontend_dist.exists():
         # Check 1: Baza danych
         try:
             from app.core.database import SessionLocal
+            from sqlalchemy import text
+            # Sprawdź połączenie z bazą
             db = SessionLocal()
-            db.execute("SELECT 1")  # Simple query to test connection
+            db.execute(text("SELECT 1"))  # Użyj text() dla SQLAlchemy 2.0+
             db.close()
             health_status["checks"]["database"] = {"status": "ok"}
         except Exception as e:
