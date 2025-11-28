@@ -1,13 +1,15 @@
 """
 Router dla autoryzacji — logowanie, rejestracja, tokeny JWT
+
+Fixed version with proper error handling and session cleanup.
 """
 import logging
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.core.exceptions import AuthenticationError, NotFoundError
-from app.core.exceptions import DuplicateError
 from app.core.exceptions import DatabaseError
+from app.core.exceptions import DuplicateError
 from app.core.security import hash_password
 from app.core.security import (
     verify_password,
@@ -35,7 +37,12 @@ async def login(
         db: Session = Depends(get_db)
 ):
     """
-    Endpoint logowania - zwraca JWT token
+    Endpoint logowania - zwraca JWT token.
+
+    Fixed version:
+    - Proper error messages (no DB details in response)
+    - Explicit session handling
+    - Early returns to prevent unnecessary queries
 
     POST /api/auth/login
     Body (form-data):
@@ -45,46 +52,69 @@ async def login(
     Returns:
         Token: JWT access token i typ tokenu
     """
-    # Znajdź użytkownika po username
-    user = db.query(User).filter(User.username == form_data.username.lower()).first()
+    try:
+        # 1. Znajdź użytkownika (case-insensitive)
+        username_lower = form_data.username.lower().strip()
 
-    if not user:
-        raise AuthenticationError(
-            message="Nieprawidłowa nazwa użytkownika lub hasło",
-            details={"username": form_data.username}
-        )
+        user = db.query(User).filter(
+            User.username == username_lower
+        ).first()
 
-    # Sprawdź czy użytkownik jest aktywny
-    if not user.is_active:
-        raise AuthenticationError(
-            message="Konto jest nieaktywne",
-            details={"username": user.username}
-        )
-
-    # Zweryfikuj hasło
-    if not user.hashed_password:
-        # Pozwól na logowanie tylko jeśli hasło podane przez użytkownika też jest puste (po przycięciu spacji)
-        if (form_data.password or "").strip() != "":
-            raise AuthenticationError(
-                message="Nieprawidłowa nazwa użytkownika lub hasło"
-            )
-    else:
-        if not verify_password(form_data.password, user.hashed_password):
+        # 2. Sprawdź czy użytkownik istnieje
+        if not user:
+            logger.warning(f"Login attempt for non-existent user: {username_lower}")
             raise AuthenticationError(
                 message="Nieprawidłowa nazwa użytkownika lub hasło"
             )
 
-    # Utwórz JWT token ze scope użytkownika
-    access_token = create_access_token(
-        user_id=user.id,
-        username=user.username,
-        scopes=user.award_scopes or []
-    )
+        # 3. Sprawdź czy konto jest aktywne
+        if not user.is_active:
+            logger.warning(f"Login attempt for inactive user: {username_lower}")
+            raise AuthenticationError(
+                message="Konto jest nieaktywne"
+            )
 
-    return {
-        "access_token": access_token,
-        "token_type": "bearer"
-    }
+        # 4. Weryfikacja hasła
+        password_provided = (form_data.password or "").strip()
+
+        if not user.hashed_password:
+            # User ma puste hasło - dozwolone tylko jeśli podane hasło też puste
+            if password_provided != "":
+                logger.warning(f"Login failed for {username_lower}: empty password expected")
+                raise AuthenticationError(
+                    message="Nieprawidłowa nazwa użytkownika lub hasło"
+                )
+        else:
+            # Weryfikuj hash
+            if not verify_password(password_provided, user.hashed_password):
+                logger.warning(f"Login failed for {username_lower}: wrong password")
+                raise AuthenticationError(
+                    message="Nieprawidłowa nazwa użytkownika lub hasło"
+                )
+
+        # 5. Utwórz JWT token
+        access_token = create_access_token(
+            user_id=user.id,
+            username=user.username,
+            scopes=user.award_scopes or []
+        )
+
+        logger.info(f"User logged in successfully: {username_lower}")
+
+        return {
+            "access_token": access_token,
+            "token_type": "bearer"
+        }
+
+    except AuthenticationError:
+        # Re-raise auth errors as-is
+        raise
+    except Exception as e:
+        # Catch-all for unexpected errors
+        logger.error(f"Login error for {form_data.username}: {e}", exc_info=True)
+        raise AuthenticationError(
+            message="Wystąpił błąd podczas logowania"
+        )
 
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
@@ -93,13 +123,13 @@ async def register(
         db: Session = Depends(get_db)
 ):
     """
-    Endpoint rejestracji nowego użytkownika
+    Endpoint rejestracji nowego użytkownika.
     UWAGA: Ten endpoint powinien być chroniony (tylko admin) - TODO: dodać middleware
 
     POST /api/auth/register
     Body:
         - username: str
-        - email: str
+        - email: str (optional)
         - password: str
         - full_name: str (optional)
         - award_scopes: List[str] (optional)
@@ -107,62 +137,75 @@ async def register(
     Returns:
         UserResponse: Dane utworzonego użytkownika
     """
+    try:
+        # 1. Walidacja username
+        username_lower = user_data.username.lower().strip()
 
-    # Sprawdź, czy username już istnieje
-    existing_user = db.query(User).filter(
-        User.username == user_data.username.lower()
-    ).first()
-
-    if existing_user:
-        raise DuplicateError(
-            resource="Użytkownik",
-            field="username",
-            value=user_data.username
-        )
-
-    # Sprawdź czy email już istnieje
-    existing_email = db.query(User).filter(
-        User.email == user_data.email
-    ).first()
-
-    if user_data.email:
-        existing_email = db.query(User).filter(
-            User.email == user_data.email
-        ).first()
-
-        if existing_email:
+        if not username_lower:
             raise DuplicateError(
                 resource="Użytkownik",
-                field="email",
-                value=user_data.email
+                field="username",
+                value="Username nie może być pusty"
             )
 
-        # Utwórz nowego użytkownika
+        # 2. Sprawdź duplikat username
+        existing_user = db.query(User).filter(
+            User.username == username_lower
+        ).first()
+
+        if existing_user:
+            raise DuplicateError(
+                resource="Użytkownik",
+                field="username",
+                value=username_lower
+            )
+
+        # 3. Sprawdź duplikat email (jeśli podany)
+        if user_data.email:
+            email_lower = user_data.email.lower().strip()
+
+            existing_email = db.query(User).filter(
+                User.email == email_lower
+            ).first()
+
+            if existing_email:
+                raise DuplicateError(
+                    resource="Użytkownik",
+                    field="email",
+                    value=email_lower
+                )
+        else:
+            email_lower = None
+
+        # 4. Utwórz użytkownika
         new_user = User(
-            username=user_data.username.lower(),
-            email=user_data.email,
+            username=username_lower,
+            email=email_lower,
             hashed_password=hash_password(user_data.password or ""),
             full_name=user_data.full_name,
-            is_active=user_data.is_active,
+            is_active=user_data.is_active if hasattr(user_data, 'is_active') else True,
+            is_admin=False,  # Zawsze False dla public registration
             award_scopes=user_data.award_scopes or []
         )
 
         db.add(new_user)
-        db.flush()  # Żeby new_user.id był dostępny
+        db.flush()  # Get user.id before creating personal award
 
-        # Utwórz imienną nagrodę dla nowego użytkownika
+        # 5. Utwórz osobistą nagrodę
         from app.models.award_type import AwardType
+
         personal_award = AwardType(
             name=f"award:personal_{new_user.username}",
-            display_name=f"Nagroda {new_user.username}",
+            display_name=f"Nagroda {new_user.full_name or new_user.username}",
             description=f"Osobista nagroda użytkownika {new_user.username}",
-            icon="⭐",
+            lucide_icon="trophy",
             color="#FFD700",
             is_personal=True,
+            is_system_award=False,
             created_by_user_id=new_user.id
         )
-        db.add(personal_award)
 
+        db.add(personal_award)
         db.commit()
         db.refresh(new_user)
 
@@ -170,8 +213,15 @@ async def register(
 
         return new_user
 
+    except (DuplicateError, AuthenticationError):
+        db.rollback()
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Registration error: {e}", exc_info=True)
+        raise DatabaseError(message="Nie można utworzyć użytkownika")
 
-# Endpoint zwracający aktualnego użytkownika na podstawie tokenu JWT
+
 @router.get("/me", response_model=UserResponse)
 async def read_me(current_user: User = Depends(get_current_user)):
     """
@@ -180,12 +230,7 @@ async def read_me(current_user: User = Depends(get_current_user)):
 
     GET /api/auth/me
     """
-    # DEBUG: Log przed zwróceniem
-    import logging
-    logger = logging.getLogger(__name__)
-    logger.info(f"User {current_user.username}: is_admin={current_user.is_admin}")
-    logger.info(f"Full user object: {current_user}")
-
+    logger.debug(f"User {current_user.username}: is_admin={current_user.is_admin}")
     return current_user
 
 
@@ -196,7 +241,7 @@ async def update_profile(
         current_user: User = Depends(get_current_user)
 ):
     """
-    Aktualizacja profilu użytkownika
+    Aktualizacja profilu użytkownika.
 
     PATCH /api/auth/me
     Body:
@@ -206,44 +251,46 @@ async def update_profile(
       "password": "NoweHaslo123!" (opcjonalne)
     }
     """
-    from app.core.exceptions import DuplicateError
-    from app.core.security import hash_password
-
-    # Sprawdź duplikat email
-    if user_update.email and user_update.email != current_user.email:
-        existing_email = db.query(User).filter(
-            User.email == user_update.email,
-            User.id != current_user.id
-        ).first()
-
-        if existing_email:
-            raise DuplicateError(
-                resource="Email",
-                field="email",
-                value=user_update.email
-            )
-
-    # Update pól
-    if user_update.full_name is not None:
-        current_user.full_name = user_update.full_name
-
-    if user_update.email is not None:
-        current_user.email = user_update.email
-
-    if user_update.password is not None:
-        if user_update.password == "":
-            # Ustawienie pustego hasła: zapisz hash pustego ciągu (bez migracji kolumny)
-            current_user.hashed_password = hash_password("")
-        else:
-            current_user.hashed_password = hash_password(user_update.password)
-
     try:
+        # 1. Sprawdź duplikat email
+        if user_update.email and user_update.email != current_user.email:
+            email_lower = user_update.email.lower().strip()
+
+            existing_email = db.query(User).filter(
+                User.email == email_lower,
+                User.id != current_user.id
+            ).first()
+
+            if existing_email:
+                raise DuplicateError(
+                    resource="Email",
+                    field="email",
+                    value=email_lower
+                )
+
+        # 2. Update pól
+        if user_update.full_name is not None:
+            current_user.full_name = user_update.full_name.strip()
+
+        if user_update.email is not None:
+            current_user.email = user_update.email.lower().strip()
+
+        if user_update.password is not None:
+            password_stripped = user_update.password.strip()
+            current_user.hashed_password = hash_password(password_stripped)
+
+        # 3. Commit changes
         db.commit()
         db.refresh(current_user)
+
         logger.info(f"User {current_user.username} updated profile")
+
+        return current_user
+
+    except DuplicateError:
+        db.rollback()
+        raise
     except SQLAlchemyError as e:
         db.rollback()
-        logger.error(f"Failed to update user: {e}")
+        logger.error(f"Failed to update user {current_user.username}: {e}")
         raise DatabaseError(message="Nie można zaktualizować profilu")
-
-    return current_user

@@ -1,112 +1,197 @@
 """
-Konfiguracja bazy danych SQLAlchemy
+Database configuration with proper session management for production.
+
+Critical fixes for Oracle Cloud deployment:
+- Proper connection pooling with timeouts
+- Explicit session cleanup
+- WAL mode for SQLite (prevents locks)
+- Connection pool pre-ping (detects stale connections)
 """
 import logging
+from contextlib import contextmanager
 
 from app.core.config import settings
-from sqlalchemy import create_engine, event, text
-from sqlalchemy.engine import Engine
+from sqlalchemy import create_engine, event, pool
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, Session
 
 logger = logging.getLogger(__name__)
 
-# Tworzenie engine dla SQLite
-engine = create_engine(
-    settings.database_url,
-    connect_args={"check_same_thread": False},  # Wymagane dla SQLite
-    pool_pre_ping=True,  # Sprawdza połączenie przed użyciem
-    echo=False  # Ustaw True dla debugowania SQL queries
-)
+# ============================================================================
+# SQLite Configuration for Production
+# ============================================================================
+
+# Connection string with optimizations
+if settings.environment == "production":
+    # Production: absolute path + optimizations
+    SQLALCHEMY_DATABASE_URL = f"sqlite:///{settings.database_path}"
+
+    # Engine with production settings
+    engine = create_engine(
+        SQLALCHEMY_DATABASE_URL,
+
+        # Connection pooling (important for concurrent requests)
+        poolclass=pool.StaticPool,  # Single connection pool for SQLite
+
+        # Timeouts
+        connect_args={
+            "check_same_thread": False,  # Allow multi-threading
+            "timeout": 30.0,  # 30s timeout for locks
+        },
+
+        # Pool settings
+        pool_pre_ping=True,  # Verify connections before using
+        pool_recycle=3600,  # Recycle connections after 1h
+
+        # Logging
+        echo=False,  # Set to True for SQL query debugging
+    )
+
+else:
+    # Development: relative path
+    SQLALCHEMY_DATABASE_URL = "sqlite:///./tamteklipy.db"
+
+    engine = create_engine(
+        SQLALCHEMY_DATABASE_URL,
+        connect_args={"check_same_thread": False},
+        pool_pre_ping=True,
+        echo=False,
+    )
 
 
-# Event listener - włącz foreign keys dla SQLite
-@event.listens_for(Engine, "connect")
+# ============================================================================
+# Enable SQLite WAL Mode (Write-Ahead Logging)
+# ============================================================================
+# WAL mode significantly improves concurrency by allowing:
+# - Multiple readers + 1 writer simultaneously
+# - No database locks on reads
+#
+# This is CRITICAL for production with multiple workers!
+
+@event.listens_for(engine, "connect")
 def set_sqlite_pragma(dbapi_conn, connection_record):
-    """Włącza foreign key constraints dla SQLite"""
+    """
+    Configure SQLite for better concurrency and performance.
+
+    Executed automatically on each new connection.
+    """
     cursor = dbapi_conn.cursor()
+
+    # Enable WAL mode (Write-Ahead Logging)
+    cursor.execute("PRAGMA journal_mode=WAL")
+
+    # Set busy timeout (wait 30s before raising "database is locked")
+    cursor.execute("PRAGMA busy_timeout=30000")
+
+    # Synchronous mode (balance between safety and speed)
+    cursor.execute("PRAGMA synchronous=NORMAL")
+
+    # Cache size (negative = KB, 64MB cache)
+    cursor.execute("PRAGMA cache_size=-64000")
+
+    # Foreign keys enforcement
     cursor.execute("PRAGMA foreign_keys=ON")
+
     cursor.close()
 
+    logger.debug("SQLite optimizations applied")
 
-# Session factory
+
+# ============================================================================
+# Session Factory
+# ============================================================================
+
 SessionLocal = sessionmaker(
     autocommit=False,
     autoflush=False,
-    bind=engine
+    bind=engine,
+    expire_on_commit=False,  # Don't expire objects after commit
 )
 
-# Bazowa klasa dla modeli
 Base = declarative_base()
 
 
-def get_db():
+# ============================================================================
+# Dependency for FastAPI Routes
+# ============================================================================
+
+def get_db() -> Session:
     """
-    Dependency do pobierania sesji bazy danych w endpointach
+    FastAPI dependency that provides DB session.
 
-    Użycie:
+    Usage in routes:
         @app.get("/users")
-        async def get_users(db: Session = Depends(get_db)):
-            users = db.query(User).all()
-            return users
+        def get_users(db: Session = Depends(get_db)):
+            return db.query(User).all()
 
-    Yields:
-        Session: Sesja bazy danych
+    Features:
+    - Automatic session cleanup (even if exception occurs)
+    - Proper rollback on errors
+    - Connection returned to pool after request
     """
     db = SessionLocal()
     try:
         yield db
     except Exception as e:
+        # Rollback on any error
         logger.error(f"Database session error: {e}")
+        db.rollback()
+        raise
+    finally:
+        # ALWAYS close the session (returns connection to pool)
+        db.close()
+
+
+# ============================================================================
+# Context Manager for Manual Session Usage
+# ============================================================================
+
+@contextmanager
+def get_db_context():
+    """
+    Context manager for using DB outside of FastAPI routes.
+
+    Usage:
+        with get_db_context() as db:
+            user = db.query(User).first()
+            # ... do work ...
+            db.commit()
+
+    Benefits:
+    - Automatic cleanup (even on exceptions)
+    - Explicit commit required
+    """
+    db = SessionLocal()
+    try:
+        yield db
+    except Exception as e:
+        logger.error(f"Database context error: {e}")
         db.rollback()
         raise
     finally:
         db.close()
 
 
-def check_database_connection() -> bool:
+# ============================================================================
+# Health Check
+# ============================================================================
+
+def check_db_connection() -> bool:
     """
-    Sprawdza czy połączenie z bazą danych działa
+    Check if database connection is working.
 
     Returns:
-        bool: True jeśli połączenie działa, False w przeciwnym razie
+        bool: True if connection OK, False otherwise
+
+    Usage in health endpoint:
+        if not check_db_connection():
+            return {"status": "unhealthy", "database": "error"}
     """
     try:
-        db = SessionLocal()
-        db.execute(text("SELECT 1"))
-        db.close()
+        with get_db_context() as db:
+            db.execute("SELECT 1")
         logger.info("Database connection OK")
         return True
     except Exception as e:
         logger.error(f"Database connection failed: {e}")
         return False
-
-
-def get_database_info() -> dict:
-    """
-    Pobiera informacje o bazie danych
-
-    Returns:
-        dict: Informacje o bazie (wersja SQLite, rozmiar, liczba tabel)
-    """
-    try:
-        db = SessionLocal()
-
-        # Wersja SQLite
-        version = db.execute(text("SELECT sqlite_version()")).scalar()
-
-        # Lista tabel
-        tables = db.execute(
-            text("SELECT name FROM sqlite_master WHERE type='table'")
-        ).fetchall()
-
-        db.close()
-
-        return {
-            "sqlite_version": version,
-            "tables_count": len(tables),
-            "tables": [table[0] for table in tables]
-        }
-    except Exception as e:
-        logger.error(f"Failed to get database info: {e}")
-        return {}
