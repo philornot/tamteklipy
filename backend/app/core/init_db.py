@@ -3,7 +3,7 @@ Inicjalizacja bazy danych — tworzenie tabel
 """
 import logging
 
-from app.core.database import engine, Base, SessionLocal
+from app.core.database import engine, Base, SessionLocal, check_db_connection
 from app.models import User, Clip, Award, Comment
 from app.models.award_type import AwardType
 from app.core.logging_config import setup_logging
@@ -17,7 +17,7 @@ def init_db():
     """
     logger.info("Sprawdzanie połączenia z bazą danych...")
 
-    if not check_database_connection():
+    if not check_db_connection():
         logger.error("Nie można połączyć się z bazą danych!")
         return False
 
@@ -29,9 +29,9 @@ def init_db():
     # seed_system_awards()
 
     # Wyświetl informacje o bazie
-    db_info = get_database_info()
-    logger.info(f"SQLite version: {db_info.get('sqlite_version')}")
-    logger.info(f"Tabele w bazie: {db_info.get('tables')}")
+    # db_info = get_database_info()
+    # logger.info(f"SQLite version: {db_info.get('sqlite_version')}")
+    # logger.info(f"Tabele w bazie: {db_info.get('tables')}")
 
     return True
 
