@@ -56,19 +56,6 @@ if [ "$ENV" = "windows" ]; then
 
     echo ""
     log_info "Wybrany serwer: $SSH_HOST"
-
-    # Test połączenia SSH
-    echo -n "Sprawdzanie połączenia SSH... "
-    if ssh -o ConnectTimeout=5 -o BatchMode=yes "$SSH_HOST" "echo OK" &> /dev/null; then
-        log_success "Połączenie OK"
-    else
-        log_error "Nie można połączyć się z $SSH_HOST!"
-        log_warning "Sprawdź czy:"
-        echo "  - Serwer jest włączony"
-        echo "  - SSH działa (ssh $SSH_HOST)"
-        echo "  - Klucz SSH jest skonfigurowany"
-        exit 1
-    fi
     echo ""
 else
     # Na RPi nie pytamy - używamy localhost
