@@ -188,8 +188,9 @@ def check_db_connection() -> bool:
             return {"status": "unhealthy", "database": "error"}
     """
     try:
+        from sqlalchemy import text
         with get_db_context() as db:
-            db.execute("SELECT 1")
+            db.execute(text("SELECT 1"))
         logger.info("Database connection OK")
         return True
     except Exception as e:

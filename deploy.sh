@@ -356,6 +356,62 @@ EOF
                 fi
             fi
 
+            # === SETUP SYSTEMD SERVICES (jeśli nie istnieją) ===
+            if ! systemctl list-unit-files | grep -q tamteklipy-backend.service; then
+                log_info "Tworzenie serwisu tamteklipy-backend..."
+
+                sudo tee /etc/systemd/system/tamteklipy-backend.service > /dev/null <<EOF
+[Unit]
+Description=TamteKlipy Backend API
+After=network.target
+
+[Service]
+Type=simple
+User=$USER
+WorkingDirectory=$HOME/tamteklipy/backend
+Environment="PATH=$HOME/tamteklipy/backend/venv/bin:/usr/local/bin:/usr/bin:/bin"
+ExecStart=$HOME/tamteklipy/backend/venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+                sudo systemctl daemon-reload
+                sudo systemctl enable tamteklipy-backend
+                log_success "Serwis backend utworzony i włączony"
+            fi
+
+            if ! systemctl list-unit-files | grep -q tamteklipy-frontend.service; then
+                log_info "Tworzenie serwisu tamteklipy-frontend..."
+
+                sudo tee /etc/systemd/system/tamteklipy-frontend.service > /dev/null <<EOF
+[Unit]
+Description=TamteKlipy Frontend
+After=network.target
+
+[Service]
+Type=simple
+User=$USER
+WorkingDirectory=$HOME/tamteklipy/frontend
+ExecStart=/usr/bin/python3 -m http.server 3000 --directory dist
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+                sudo systemctl daemon-reload
+                sudo systemctl enable tamteklipy-frontend
+                log_success "Serwis frontend utworzony i włączony"
+            fi
+            # === END SYSTEMD SETUP ===
+
+            # Restart serwisu
+            log_info "Restartowanie backendu..."
+
             # Restart serwisu
             log_info "Restartowanie backendu..."
             if sudo systemctl restart tamteklipy-backend; then
