@@ -1,5 +1,0 @@
-echo "* text=auto" > .gitattributes
-echo "*.sh text eol=lf" >> .gitattributes
-echo "*.py text eol=lf" >> .gitattributes
-git add .gitattributes
-git commit -m "Add .gitattributes for line endings"

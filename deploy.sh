@@ -142,24 +142,44 @@ if [ "$ENV" = "windows" ]; then
         log_info "[1/4] Pomijanie lokalnego commita (tryb pull-only)..."
         echo ""
     else
-        log_info "[1/4] Commitowanie i pushowanie zmian..."
+        log_info "[1/4] Sprawdzanie zmian w repozytorium..."
 
         # Sprawdź czy są zmiany do commitowania
         if [[ -n $(git status -s) ]]; then
+            log_warning "Masz niezacommitowane zmiany!"
+            git status -s
+            echo ""
+
             if [ "$DRY_RUN" = true ]; then
-                log_info "DRY RUN: Znaleziono zmiany, zostałyby zacommitowane"
-                git status -s
+                log_info "DRY RUN: Znaleziono zmiany, zostałyby zacommitowane jeśli wybierzesz 'tak'"
             else
-                read -p "💬 Wiadomość commita: " commit_msg
-                git add .
-                git commit -m "$commit_msg"
-                git push
-                log_success "Zmiany wypchnięte na GitHub"
+                read -p "Czy chcesz zacommitować i pushować? (tak/nie): " commit_choice
+
+                if [[ "$commit_choice" == "tak" ]] || [[ "$commit_choice" == "t" ]]; then
+                    read -p "💬 Wiadomość commita: " commit_msg
+                    git add .
+                    git commit -m "$commit_msg"
+                    git push
+                    log_success "Zmiany wypchnięte na GitHub"
+                else
+                    log_warning "Deployment anulowany - najpierw zacommituj zmiany"
+                    exit 1
+                fi
             fi
         else
-            log_info "Brak zmian do commitowania"
-            if [ "$DRY_RUN" = false ]; then
-                git push
+            log_info "Brak zmian do commitowania - kod jest aktualny"
+
+            # Sprawdź czy coś jest do pushowania
+            if git status | grep -q "Your branch is ahead"; then
+                if [ "$DRY_RUN" = true ]; then
+                    log_info "DRY RUN: Zostałyby pushowane zacommitowane zmiany"
+                else
+                    log_info "Pushowanie zacommitowanych zmian..."
+                    git push
+                    log_success "Zmiany wypchnięte na GitHub"
+                fi
+            else
+                log_success "Wszystko aktualne"
             fi
         fi
         echo ""
