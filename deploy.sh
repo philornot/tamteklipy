@@ -25,6 +25,57 @@ else
     PROJECT_DIR=~/tamteklipy
 fi
 
+# === INTERACTIVE SSH HOST SELECTION (Windows only) ===
+if [ "$ENV" = "windows" ]; then
+    echo ""
+    echo "╔════════════════════════════════════════╗"
+    echo "║  Wybierz docelowy serwer (RPi)         ║"
+    echo "╚════════════════════════════════════════╝"
+    echo ""
+    echo "  1) frpi4  (Raspberry Pi 4 - nowy)"
+    echo "  2) frpi   (Raspberry Pi Zero 2W - stary)"
+    echo "  3) Własny hostname"
+    echo ""
+    read -p "Wybierz opcję [1-3]: " ssh_choice
+
+    case $ssh_choice in
+        1)
+            SSH_HOST="frpi4"
+            ;;
+        2)
+            SSH_HOST="frpi"
+            ;;
+        3)
+            read -p "Podaj hostname lub IP: " SSH_HOST
+            ;;
+        *)
+            log_error "Nieprawidłowy wybór"
+            exit 1
+            ;;
+    esac
+
+    echo ""
+    log_info "Wybrany serwer: $SSH_HOST"
+
+    # Test połączenia SSH
+    echo -n "Sprawdzanie połączenia SSH... "
+    if ssh -o ConnectTimeout=5 -o BatchMode=yes "$SSH_HOST" "echo OK" &> /dev/null; then
+        log_success "Połączenie OK"
+    else
+        log_error "Nie można połączyć się z $SSH_HOST!"
+        log_warning "Sprawdź czy:"
+        echo "  - Serwer jest włączony"
+        echo "  - SSH działa (ssh $SSH_HOST)"
+        echo "  - Klucz SSH jest skonfigurowany"
+        exit 1
+    fi
+    echo ""
+else
+    # Na RPi nie pytamy - używamy localhost
+    SSH_HOST="localhost"
+fi
+# === END SSH HOST SELECTION ===
+
 # Parsuj argumenty
 DEPLOY_BACKEND=true
 DEPLOY_FRONTEND=true
@@ -159,21 +210,11 @@ if [ "$ENV" = "windows" ]; then
         if [ "$DRY_RUN" = true ]; then
             log_info "DRY RUN: Frontend zostałby przesłany przez SCP"
         else
-            # Sprawdź połączenie SSH
-            if ! ssh -o ConnectTimeout=5 frpi "echo 'Connection OK'" &> /dev/null; then
-                log_error "Nie można połączyć się z RPi przez SSH!"
-                log_warning "Sprawdź czy:"
-                echo "  - RPi jest włączony"
-                echo "  - SSH działa (ssh frpi)"
-                echo "  - Klucz SSH jest skonfigurowany"
-                exit 1
-            fi
-
             # Utwórz katalog dist na RPi jeśli nie istnieje
-            ssh frpi "mkdir -p ~/tamteklipy/frontend/dist"
+            ssh "$SSH_HOST" "mkdir -p ~/tamteklipy/frontend/dist"
 
             # Prześlij zawartość dist
-            scp -r dist/* frpi:~/tamteklipy/frontend/dist/
+            scp -r dist/* "$SSH_HOST":~/tamteklipy/frontend/dist/
 
             log_success "Frontend przesłany"
         fi
@@ -200,11 +241,11 @@ if [ "$ENV" = "windows" ]; then
         fi
     else
         if [ "$DEPLOY_BACKEND" = true ] && [ "$DEPLOY_FRONTEND" = true ]; then
-            ssh frpi "cd ~/tamteklipy && bash deploy.sh"
+            ssh "$SSH_HOST" "cd ~/tamteklipy && bash deploy.sh"
         elif [ "$DEPLOY_BACKEND" = true ]; then
-            ssh frpi "cd ~/tamteklipy && bash deploy.sh -b"
+            ssh "$SSH_HOST" "cd ~/tamteklipy && bash deploy.sh -b"
         elif [ "$DEPLOY_FRONTEND" = true ]; then
-            ssh frpi "cd ~/tamteklipy && bash deploy.sh -f"
+            ssh "$SSH_HOST" "cd ~/tamteklipy && bash deploy.sh -f"
         fi
     fi
 
