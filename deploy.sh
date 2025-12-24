@@ -1,6 +1,6 @@
 #!/bin/bash
 # TamteKlipy - Uniwersalny Skrypt Deployment (Windows Git Bash + RPi)
-# Version: 2.0
+# Version: 2.1
 set -e
 
 # Kolory dla outputu
@@ -76,7 +76,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 echo "╔═══════════════════════════════════════╗"
-echo "║   TamteKlipy Deployment Script v2.0   ║"
+echo "║   TamteKlipy Deployment Script v2.1   ║"
 echo "╚═══════════════════════════════════════╝"
 echo ""
 log_info "Środowisko: $ENV"
@@ -411,9 +411,6 @@ EOF
 
             # Restart serwisu
             log_info "Restartowanie backendu..."
-
-            # Restart serwisu
-            log_info "Restartowanie backendu..."
             if sudo systemctl restart tamteklipy-backend; then
                 log_success "Backend zrestartowany"
 
@@ -459,7 +456,31 @@ EOF
             # Sprawdź czy dist istnieje (powinien być przesłany z Windows)
             if [ ! -d "dist" ] || [ -z "$(ls -A dist 2>/dev/null)" ]; then
                 log_error "OSTRZEŻENIE: dist/ jest pusty lub nie istnieje!"
-                log_warning "Frontend powinien być zbudowany na Windows i przesłany przez SCP"
+                echo ""
+                log_warning "╔════════════════════════════════════════════════════════════════╗"
+                log_warning "║  AKCJA WYMAGANA: Zbuduj frontend na Windows                  ║"
+                log_warning "╚════════════════════════════════════════════════════════════════╝"
+                echo ""
+                log_info "Wykonaj te kroki NA WINDOWS (Git Bash lub PowerShell):"
+                echo ""
+                echo "  1️⃣  Przejdź do katalogu projektu:"
+                echo "      cd /c/Users/YourUser/tamteklipy"
+                echo ""
+                echo "  2️⃣  Zbuduj frontend:"
+                echo "      cd frontend"
+                echo "      npm install          # lub: pnpm install"
+                echo "      npm run build        # lub: pnpm run build"
+                echo ""
+                echo "  3️⃣  Prześlij na RPi:"
+                echo "      cd .."
+                echo "      bash deploy.sh -f"
+                echo ""
+                log_info "Alternatywnie - pełny deployment z Windows:"
+                echo "      bash deploy.sh"
+                echo ""
+                log_warning "Deployment wstrzymany - napraw frontend i uruchom ponownie"
+                echo ""
+                exit 1
             else
                 log_success "dist/ istnieje i zawiera pliki"
             fi
@@ -530,10 +551,31 @@ EOF
     echo "║   Deployment Zakończony! 🚀           ║"
     echo "╚═══════════════════════════════════════╝"
     echo ""
-    log_success "Twoja aplikacja: https://www.tamteklipy.pl"
-    log_info "Health check: https://www.tamteklipy.pl/health"
-    echo ""
-    log_info "Domyślne logowanie: philornot / HasloFilipa"
+
+    # Sprawdź czy są problemy
+    ISSUES=false
+
+    if [ "$DEPLOY_FRONTEND" = true ]; then
+        if [ ! -d "frontend/dist" ] || [ -z "$(ls -A frontend/dist)" ]; then
+            ISSUES=true
+            log_error "PROBLEM: Frontend dist jest pusty!"
+            echo ""
+            log_info "Wykonaj NA WINDOWS:"
+            echo "  cd /c/Users/YourUser/tamteklipy"
+            echo "  bash deploy.sh -f"
+            echo ""
+        fi
+    fi
+
+    if [ "$ISSUES" = false ]; then
+        log_success "Twoja aplikacja: https://www.tamteklipy.pl"
+        log_info "Health check: https://www.tamteklipy.pl/health"
+        echo ""
+        log_info "Domyślne logowanie: philornot / HasloFilipa"
+    else
+        log_warning "Deployment częściowy - zobacz problemy powyżej"
+    fi
+
     echo ""
     log_info "Przydatne komendy:"
     echo "   sudo systemctl status tamteklipy-backend"
