@@ -6,10 +6,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from datetime import datetime, timedelta
 from app.core.database import SessionLocal, engine
 from app.models.user import User
-from app.models.clip import Clip, ClipType
+from app.models.clip import Clip
 from app.models.award import Award
 from app.models.award_type import AwardType
 from app.core.security import hash_password
@@ -60,7 +59,7 @@ def seed_users(db):
         {
             "username": "philornot",
             "email": None,
-            "password": "",
+            "password": "HasloFilipa",
             "full_name": "Filip",
             "is_admin": True,
             "award_scopes": []
@@ -112,209 +111,6 @@ def seed_users(db):
     logger.info(f"Utworzono {len(created_users)} użytkowników z osobistymi nagrodami\n")
 
     return created_users
-
-
-def seed_custom_awards(db, users):
-    """Tworzy dodatkowe custom nagrody dla niektórych użytkowników"""
-    logger.info("Tworzenie dodatkowych custom nagród...")
-
-    # gamer1 tworzy swoją custom nagrodę
-    gamer1 = next((u for u in users if u.username == "gamer1"), None)
-    if gamer1:
-        # Sprawdź czy nie istnieje
-        existing = db.query(AwardType).filter(
-            AwardType.name == "award:custom_gamer1_mvp"
-        ).first()
-
-        if not existing:
-            custom_award = AwardType(
-                name="award:custom_gamer1_mvp",
-                display_name="MVP of the Match",
-                description="Za bycie najlepszym graczem w meczu",
-                lucide_icon="crown",
-                color="#FFD700",
-                created_by_user_id=gamer1.id,
-                is_system_award=False,
-                is_personal=False
-            )
-            db.add(custom_award)
-            logger.info(f"  Created custom award by gamer1: {custom_award.display_name}")
-        else:
-            logger.info(f"  Custom award by gamer1 already exists, skipping")
-
-    # gamer2 tworzy swoją custom nagrodę z custom ikoną
-    gamer2 = next((u for u in users if u.username == "gamer2"), None)
-    if gamer2:
-        existing = db.query(AwardType).filter(
-            AwardType.name == "award:custom_gamer2_lucky"
-        ).first()
-
-        if not existing:
-            custom_award = AwardType(
-                name="award:custom_gamer2_lucky",
-                display_name="Lucky Shot",
-                description="Za szczęśliwy strzał",
-                custom_icon_path="/uploads/award_icons/lucky_shot.png",
-                color="#4CAF50",
-                created_by_user_id=gamer2.id,
-                is_system_award=False,
-                is_personal=False
-            )
-            db.add(custom_award)
-            logger.info(f"  Created custom award by gamer2: {custom_award.display_name} (custom icon)")
-        else:
-            logger.info(f"  Custom award by gamer2 already exists, skipping")
-
-    db.commit()
-    logger.info("Dodatkowe custom nagrody utworzone\n")
-
-
-def seed_clips(db, users):
-    """Tworzy testowe klipy (opcjonalnie - bez rzeczywistych plików)"""
-    logger.info("Tworzenie testowych klipów...")
-
-    clips_data = [
-        {
-            "filename": "epic_pentakill.mp4",
-            "clip_type": ClipType.VIDEO,
-            "duration": 45,
-            "file_size": 15_728_640,  # 15 MB
-            "width": 1920,
-            "height": 1080
-        },
-        {
-            "filename": "funny_fail.mp4",
-            "clip_type": ClipType.VIDEO,
-            "duration": 12,
-            "file_size": 5_242_880,  # 5 MB
-            "width": 1920,
-            "height": 1080
-        },
-        {
-            "filename": "clutch_1v5.mp4",
-            "clip_type": ClipType.VIDEO,
-            "duration": 67,
-            "file_size": 20_971_520,  # 20 MB
-            "width": 2560,
-            "height": 1440
-        },
-        {
-            "filename": "beautiful_screenshot.png",
-            "clip_type": ClipType.SCREENSHOT,
-            "duration": None,
-            "file_size": 2_097_152,  # 2 MB
-            "width": 3840,
-            "height": 2160
-        }
-    ]
-
-    created_clips = []
-    base_time = datetime.utcnow() - timedelta(days=7)
-
-    for idx, clip_data in enumerate(clips_data):
-        # Sprawdź czy clip już istnieje
-        existing = db.query(Clip).filter(Clip.filename == clip_data["filename"]).first()
-        if existing:
-            logger.info(f"  Klip {clip_data['filename']} już istnieje, pomijam")
-            created_clips.append(existing)
-            continue
-
-        uploader = users[idx % len(users)]
-
-        # absolutna ścieżka z settings (TK-504)
-        if settings.environment == "development":
-            clips_dir = Path("uploads/clips")
-        else:
-            clips_dir = Path(settings.clips_path)
-
-        file_path = str(clips_dir / "video.mp4")
-
-        # absolutna ścieżka z settings (TK-499)
-        if settings.environment == "development":
-            thumbnails_dir = Path("uploads/thumbnails")
-        else:
-            thumbnails_dir = Path(settings.thumbnails_path)
-
-        thumbnail_path = str(thumbnails_dir / "thumb.jpg")
-
-        clip = Clip(
-            filename=clip_data["filename"],
-            file_path=file_path,
-            thumbnail_path=thumbnail_path,
-            clip_type=clip_data["clip_type"],
-            file_size=clip_data["file_size"],
-            duration=clip_data["duration"],
-            width=clip_data["width"],
-            height=clip_data["height"],
-            uploader_id=uploader.id,
-            created_at=base_time + timedelta(days=idx)
-        )
-
-        db.add(clip)
-        created_clips.append(clip)
-        logger.info(f"  {clip_data['filename']} (uploader: {uploader.username})")
-
-    db.commit()
-    logger.info(f"Utworzono {len(created_clips)} klipów\n")
-
-    return created_clips
-
-
-def seed_awards(db, users, clips):
-    """Tworzy testowe nagrody"""
-    logger.info("Przyznawanie testowych nagród...")
-
-    awards_count = 0
-
-    # Pobierz wszystkie dostępne nagrody
-    all_awards = db.query(AwardType).all()
-
-    # Każdy użytkownik przyzna losowe nagrody do klipów
-    for user in users:
-        for clip in clips:
-            # Użytkownik nie może przyznać nagrody do swojego klipa
-            if clip.uploader_id == user.id:
-                continue
-
-            import random
-
-            # 60% szans na przyznanie nagrody
-            if random.random() > 0.6:
-                continue
-
-            # Wybierz dostępne nagrody dla użytkownika
-            available_awards = [
-                award for award in all_awards
-                if user.can_give_award(award)
-            ]
-
-            if not available_awards:
-                continue
-
-            # Wybierz losową nagrodę
-            award_type = random.choice(available_awards)
-
-            # Sprawdź czy już nie przyznał takiej nagrody
-            existing = db.query(Award).filter(
-                Award.clip_id == clip.id,
-                Award.user_id == user.id,
-                Award.award_name == award_type.name
-            ).first()
-
-            if existing:
-                continue
-
-            award = Award(
-                clip_id=clip.id,
-                user_id=user.id,
-                award_name=award_type.name
-            )
-
-            db.add(award)
-            awards_count += 1
-
-    db.commit()
-    logger.info(f"Przyznano {awards_count} nagród\n")
 
 
 def print_summary(db):
@@ -387,9 +183,6 @@ def main(clear_first=False):
             clear_database(db)
 
         users = seed_users(db)
-        # seed_custom_awards(db, users)
-        # clips = seed_clips(db, users)
-        # seed_awards(db, users, clips)
 
         print_summary(db)
 
