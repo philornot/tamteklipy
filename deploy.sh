@@ -1,6 +1,6 @@
 #!/bin/bash
 # TamteKlipy - Uniwersalny Skrypt Deployment (Windows Git Bash + RPi)
-# Version: 2.1
+# Version: 2.2
 set -e
 
 # Kolory dla outputu
@@ -334,7 +334,6 @@ else
 
         if [ "$DRY_RUN" = true ]; then
             log_info "DRY RUN: Sprawdzanie .env, instalacja pakietów, restart serwisu"
-            cd ..
         else
             if [ ! -f .env ]; then
                 log_warning "backend/.env NIE ZNALEZIONY!"
@@ -428,7 +427,8 @@ EOF
 
                 sudo systemctl daemon-reload
                 sudo systemctl enable tamteklipy-backend
-                log_success "Serwis backend utworzony i włączony"
+                sudo systemctl start tamteklipy-backend
+                log_success "Serwis backend utworzony i uruchomiony"
             fi
 
             if ! systemctl list-unit-files | grep -q tamteklipy-frontend.service; then
@@ -453,16 +453,16 @@ EOF
 
                 sudo systemctl daemon-reload
                 sudo systemctl enable tamteklipy-frontend
-                log_success "Serwis frontend utworzony i włączony"
+                sudo systemctl start tamteklipy-frontend
+                log_success "Serwis frontend utworzony i uruchomiony"
             fi
             # === END SYSTEMD SETUP ===
 
-            # Restart serwisu
-            log_info "Restartowanie backendu..."
+            # Restart backendu
+            log_info "[4/6] Restartowanie backendu..."
             if sudo systemctl restart tamteklipy-backend; then
                 log_success "Backend zrestartowany"
 
-                # Sprawdź czy startuje poprawnie
                 sleep 2
                 if systemctl is-active --quiet tamteklipy-backend; then
                     log_success "Backend działa poprawnie"
@@ -475,83 +475,26 @@ EOF
                 exit 1
             fi
             echo ""
-
-            cd ..
         fi
+
+        cd ..
     else
         log_warning "[2/6] Pomijanie konfiguracji backendu..."
         log_warning "[3/6] Pomijanie aktualizacji backendu..."
+        log_warning "[4/6] Pomijanie restartu backendu..."
         echo ""
     fi
 
-    # Deployment frontendu
-    if [ "$DEPLOY_FRONTEND" = true ]; then
-        log_info "[4/6] Sprawdzanie konfiguracji frontendu..."
-        cd frontend
-
-        if [ "$DRY_RUN" = true ]; then
-            log_info "DRY RUN: Sprawdzanie .env.production i dist/"
-            cd ..
-        else
-            if [ ! -f .env.production ]; then
-                log_info "Tworzenie frontend/.env.production..."
-                echo "VITE_API_URL=https://www.tamteklipy.pl" > .env.production
-                log_success ".env.production utworzony"
-            else
-                log_success ".env.production istnieje"
-            fi
-
-            # Sprawdź czy dist istnieje (powinien być przesłany z Windows)
-            if [ ! -d "dist" ] || [ -z "$(ls -A dist 2>/dev/null)" ]; then
-                log_error "OSTRZEŻENIE: dist/ jest pusty lub nie istnieje!"
-                echo ""
-                log_warning "╔════════════════════════════════════════════════════════════════╗"
-                log_warning "║  AKCJA WYMAGANA: Zbuduj frontend na Windows                  ║"
-                log_warning "╚════════════════════════════════════════════════════════════════╝"
-                echo ""
-                log_info "Wykonaj te kroki NA WINDOWS (Git Bash lub PowerShell):"
-                echo ""
-                echo "  1️⃣  Przejdź do katalogu projektu:"
-                echo "      cd /c/Users/YourUser/tamteklipy"
-                echo ""
-                echo "  2️⃣  Zbuduj frontend:"
-                echo "      cd frontend"
-                echo "      npm install          # lub: pnpm install"
-                echo "      npm run build        # lub: pnpm run build"
-                echo ""
-                echo "  3️⃣  Prześlij na RPi:"
-                echo "      cd .."
-                echo "      bash deploy.sh -f"
-                echo ""
-                log_info "Alternatywnie - pełny deployment z Windows:"
-                echo "      bash deploy.sh"
-                echo ""
-                log_warning "Deployment wstrzymany - napraw frontend i uruchom ponownie"
-                echo ""
-                exit 1
-            else
-                log_success "dist/ istnieje i zawiera pliki"
-            fi
-            echo ""
-
-            cd ..
-        fi
-    else
-        log_warning "[4/6] Pomijanie konfiguracji frontendu..."
-        echo ""
-    fi
-
-    # Restart serwisu frontendu
+    # Restart frontendu
     if [ "$DEPLOY_FRONTEND" = true ]; then
         log_info "[5/6] Restartowanie serwisu frontendu..."
 
         if [ "$DRY_RUN" = true ]; then
-            log_info "DRY RUN: Serwis frontendu zostałby zrestartowany"
+            log_info "DRY RUN: Frontend zostałby zrestartowany"
         else
             if sudo systemctl restart tamteklipy-frontend; then
                 log_success "Frontend zrestartowany"
 
-                # Sprawdź czy startuje poprawnie
                 sleep 1
                 if systemctl is-active --quiet tamteklipy-frontend; then
                     log_success "Frontend działa poprawnie"
