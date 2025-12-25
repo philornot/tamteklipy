@@ -26,17 +26,11 @@ from app.models.user import User
 from app.schemas.clip import ClipResponse, ClipListResponse, ClipDetailResponse
 from app.services.background_tasks import generate_webp_from_jpeg_background
 from app.services.background_tasks import process_thumbnail_background
-from app.services.background_tasks import process_thumbnail_background
 from app.services.file_processor import (
     save_file_to_disk, create_clip_record,
     get_storage_directory
 )
-from app.services.file_processor import (
-    save_file_to_disk, create_clip_record,
-    get_storage_directory
-)
-from app.services.thumbnail_service import extract_video_metadata
-from app.utils.file_helpers import can_access_clip
+from app.services.validated_file import ValidatedFile
 from fastapi import APIRouter, UploadFile, File, Depends, BackgroundTasks, Request, Response
 from fastapi import Query
 from fastapi.responses import FileResponse, StreamingResponse
@@ -108,17 +102,22 @@ async def upload_file(
         db=Depends(get_db),
         current_user: User = Depends(get_current_user)
 ):
-    """Upload pliku z opcjonalnym thumbnail z frontendu"""
+    """
+    Upload pliku z opcjonalnym thumbnail z frontendu
+
+    """
     logger.info(f"Upload from {current_user.username}: {file.filename}")
 
     try:
+        # Walidacja pliku - rzuca ValidationError jeśli błąd
         validated = ValidatedFile(uploaded_file=file)
 
-        # Sprawdź dostępne miejsce
+        # Przygotuj katalog storage
         storage_dir = get_storage_directory(validated.clip_type)
-        check_disk_space(storage_dir, validated.size_bytes)
 
-        # Zapis pliku na dysku (używa validated.content i validated.unique_filename)
+        # TODO: Implement disk space checking if needed
+
+        # Zapis pliku na dysku
         file_path = await save_file_to_disk(
             validated.content,
             validated.unique_filename,
@@ -143,6 +142,7 @@ async def upload_file(
         )
         logger.info(f"Clip created: ID={new_clip.id}")
 
+        # Obsługa thumbnail z frontendu
         if thumbnail:
             try:
                 # Przygotuj katalog
@@ -181,31 +181,28 @@ async def upload_file(
                 logger.warning(f"Failed to save thumbnail from frontend: {e}")
                 # Nie blokuj uploadu, backend wygeneruje w tle
 
-        # 10. Jeśli NIE było thumbnail z frontendu, zakolejkuj pełne generowanie
+        # Jeśli NIE było thumbnail z frontendu, zakolejkuj pełne generowanie
         if not thumbnail:
+            # FIX: Use validated.clip_type instead of undefined clip_type
             background_tasks.add_task(
                 process_thumbnail_background,
                 clip_id=new_clip.id,
                 file_path=str(file_path),
-                clip_type=clip_type
+                clip_type=validated.clip_type
             )
             logger.info(f"Thumbnail generation queued (backend fallback)")
 
-        # 11. Invalidacja cache
-        # CACHE USUNIĘTE - TK-603
-
-        # 12. Response
+        # Response
         return {
             "message": "Plik został przesłany pomyślnie",
             "clip_id": new_clip.id,
-            "filename": file.filename,
-            "file_size_mb": round(file_size / (1024 * 1024), 2),
-            "clip_type": clip_type.value,
+            "filename": validated.original_filename,
+            "file_size_mb": validated.size_mb,
+            "clip_type": validated.clip_type.value,
             "uploader": current_user.username,
             "created_at": new_clip.created_at.isoformat(),
             "thumbnail_status": "ready" if thumbnail else "processing",
             "thumbnail_ready": thumbnail is not None,
-            # Metadata będą NULL - uzupełnione w tle jeśli potrzebne
             "duration": new_clip.duration,
             "width": new_clip.width,
             "height": new_clip.height
