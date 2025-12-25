@@ -23,8 +23,9 @@ logger = logging.getLogger(__name__)
 
 # Connection string with optimizations
 if settings.environment == "production":
-    # Production: absolute path + optimizations
-    SQLALCHEMY_DATABASE_URL = f"sqlite:///{settings.database_path}"
+    # Production: use database_url directly
+    # It should be absolute path in .env: DATABASE_URL=sqlite:////absolute/path/to/db.db
+    SQLALCHEMY_DATABASE_URL = settings.database_url
 
     # Engine with production settings
     engine = create_engine(
