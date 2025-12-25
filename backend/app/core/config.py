@@ -1,15 +1,10 @@
 """
-Konfiguracja aplikacji - zmienne środowiskowe
+Konfiguracja aplikacji — zmienne środowiskowe
 """
-import os
 from typing import List
-from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional
 
-
-# Pobierz environment PRZED utworzeniem klasy
-ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
-ENV_FILE = f".env.{ENVIRONMENT}"
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -41,7 +36,7 @@ class Settings(BaseSettings):
     max_video_size_mb: int = 500
     max_image_size_mb: int = 10
 
-    # CORS - teraz Pydantic będzie to ładować z .env.production
+    # CORS
     allowed_origins: str = "http://localhost:5173,http://localhost:3000"
 
     # Email (opcjonalnie)
@@ -53,24 +48,27 @@ class Settings(BaseSettings):
     redis_url: Optional[str] = None
 
     model_config = SettingsConfigDict(
-        env_file=ENV_FILE,  # <-- UŻYWAJ ZMIENNEJ GLOBALNEJ, NIE ClassVar
+        # KROK 1: Załaduj główny .env (ten z ENVIRONMENT=production)
+        env_file=".env",
         env_file_encoding="utf-8",
-        case_sensitive=False,  # <-- ALLOWED_ORIGINS → allowed_origins
-        extra="ignore"  # Ignoruj nieznane zmienne z .env
+        case_sensitive=False,
+        extra="ignore"
     )
 
     # --- Własne property ---
     @property
     def max_video_size_bytes(self) -> int:
+        """Maximum video size in bytes."""
         return self.max_video_size_mb * 1024 * 1024
 
     @property
     def max_image_size_bytes(self) -> int:
+        """Maximum image size in bytes."""
         return self.max_image_size_mb * 1024 * 1024
 
     @property
     def origins_list(self) -> List[str]:
-        """Zwraca listę dozwolonych origins dla CORS"""
+        """Zwraca listę dozwolonych origins dla CORS."""
         return [origin.strip() for origin in self.allowed_origins.split(",") if origin.strip()]
 
 
