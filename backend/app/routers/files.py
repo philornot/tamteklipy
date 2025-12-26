@@ -42,6 +42,8 @@ from sqlalchemy.orm import Session, selectinload, joinedload
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+STREAM_CHUNK_SIZE = 256 * 1024  # 256KB chunks for smoother streaming on slow disks
+ZIP_STREAM_CHUNK_SIZE = 256 * 1024
 
 
 # ============================================================================
@@ -709,7 +711,7 @@ async def download_bulk(
 
         buffer.seek(0)
         while True:
-            chunk = buffer.read(8192)
+            chunk = buffer.read(ZIP_STREAM_CHUNK_SIZE)
             if not chunk:
                 break
             yield chunk
@@ -1127,7 +1129,7 @@ async def stream_video(
             remaining = chunk_size
 
             while remaining > 0:
-                read_size = min(8192, remaining)  # 8KB chunks
+                read_size = min(STREAM_CHUNK_SIZE, remaining)
                 data = await f.read(read_size)
 
                 if not data:
