@@ -31,6 +31,7 @@ from app.services.file_processor import (
     get_storage_directory
 )
 from app.services.validated_file import ValidatedFile
+from app.utils.file_helpers import can_access_clip
 from fastapi import APIRouter, UploadFile, File, Depends, BackgroundTasks, Request, Response
 from fastapi import Query
 from fastapi.responses import FileResponse, StreamingResponse
@@ -606,10 +607,12 @@ async def download_clip(
         )
 
     file_path = Path(clip.file_path)
+
     if not file_path.exists():
         raise StorageError(
             message="Plik nie został znaleziony",
-            path=str(file_path)
+            path=str(file_path),
+            status_code=status.HTTP_404_NOT_FOUND
         )
 
     media_type = "video/mp4" if clip.clip_type == ClipType.VIDEO else "image/png"
@@ -1076,7 +1079,8 @@ async def stream_video(
     if not file_path.exists():
         raise StorageError(
             message="Plik nie został znaleziony",
-            path=str(file_path)
+            path=str(file_path),
+            status_code=status.HTTP_404_NOT_FOUND
         )
 
     file_size = file_path.stat().st_size

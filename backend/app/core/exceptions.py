@@ -122,13 +122,21 @@ class StorageError(TamteKlipyException):
     def __init__(
             self,
             message: str = "Błąd dostępu do storage",
-            path: Optional[str] = None
+            path: Optional[str] = None,
+            *,
+            status_code: Optional[int] = None,
+            details: Optional[Dict[str, Any]] = None
     ):
-        details = {"path": path} if path else {}
+        combined_details = dict(details) if details else {}
+        if path and "path" not in combined_details:
+            combined_details["path"] = path
+
+        resolved_status = status_code or status.HTTP_500_INTERNAL_SERVER_ERROR
+
         super().__init__(
             message,
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            details=details
+            status_code=resolved_status,
+            details=combined_details
         )
 
 

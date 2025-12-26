@@ -2,6 +2,7 @@
 Router dla admina – zarządzanie systemem
 """
 import logging
+import errno
 from datetime import datetime
 from pathlib import Path
 from typing import List
@@ -356,7 +357,19 @@ async def upload_award_icon(
             f.write(content)
     except OSError as e:
         logger.error(f"Failed to save icon: {e}")
-        raise StorageError(message="Nie można zapisać ikony", path=str(file_path))
+        if e.errno in (errno.ENOSPC,):
+            storage_status = status.HTTP_507_INSUFFICIENT_STORAGE
+        elif e.errno in (errno.EACCES, errno.EPERM):
+            storage_status = status.HTTP_500_INTERNAL_SERVER_ERROR
+        else:
+            storage_status = status.HTTP_500_INTERNAL_SERVER_ERROR
+
+        raise StorageError(
+            message="Nie można zapisać ikony",
+            path=str(file_path),
+            status_code=storage_status,
+            details={"errno": e.errno, "system_error": str(e)}
+        )
 
     # Zaktualizuj w bazie
     award_type.custom_icon_path = str(file_path)
