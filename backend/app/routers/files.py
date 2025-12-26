@@ -109,8 +109,15 @@ async def upload_file(
     logger.info(f"Upload from {current_user.username}: {file.filename}")
 
     try:
-        # Walidacja pliku - rzuca ValidationError jeśli błąd
-        validated = ValidatedFile(uploaded_file=file)
+        # TK-626: Odczytaj zawartość pliku PRZED walidacją
+        file_content = await file.read()
+
+        # Walidacja pliku - używa factory method
+        validated = ValidatedFile(
+            file_content=file_content,
+            filename=file.filename,
+            content_type=file.content_type
+        )
 
         # Przygotuj katalog storage
         storage_dir = get_storage_directory(validated.clip_type)
@@ -183,7 +190,6 @@ async def upload_file(
 
         # Jeśli NIE było thumbnail z frontendu, zakolejkuj pełne generowanie
         if not thumbnail:
-            # FIX: Use validated.clip_type instead of undefined clip_type
             background_tasks.add_task(
                 process_thumbnail_background,
                 clip_id=new_clip.id,
