@@ -180,19 +180,30 @@ def admin_headers(admin_token) -> dict:
 @pytest.fixture(scope="function")
 def sample_clips(db_session, test_user, admin_user) -> list[Clip]:
     """Create sample clips for testing."""
-    clips = []
+    import tempfile
+    import platform
 
+    # Use platform-appropriate absolute paths
+    if platform.system() == "Windows":
+        base_path = Path("C:/temp/test_clips")
+    else:
+        base_path = Path("/tmp/test_clips")
+
+    # Ensure directory exists (optional, for safety)
+    base_path.mkdir(parents=True, exist_ok=True)
+
+    clips = []
     for i in range(50):
         clip = Clip(
             filename=f"test_video_{i}.mp4",
-            file_path=f"/tmp/test_video_{i}.mp4",
+            file_path=str(base_path / f"test_video_{i}.mp4"),  # Absolute path
             clip_type=ClipType.VIDEO if i % 2 == 0 else ClipType.SCREENSHOT,
             file_size=1024 * 1024 * (i + 1),
             duration=60 + i if i % 2 == 0 else None,
             width=1920,
             height=1080,
             uploader_id=test_user.id if i % 3 != 0 else admin_user.id,
-            thumbnail_path=f"/tmp/thumb_{i}.jpg" if i % 2 == 0 else None
+            thumbnail_path=str(base_path / f"thumb_{i}.jpg") if i % 2 == 0 else None
         )
         db_session.add(clip)
         clips.append(clip)
