@@ -1,0 +1,19 @@
+# Performance testing dependencies
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-benchmark>=4.0.0
+pytest-timeout>=2.1.0
+pytest-xdist>=3.3.1  # For parallel test execution
+
+# HTTP testing
+httpx>=0.24.0
+
+# Memory profiling (optional but useful)
+memory-profiler>=0.61.0
+psutil>=5.9.0
+
+# Test data generation
+faker>=19.0.0
+
+# Coverage (optional)
+pytest-cov>=4.1.0
