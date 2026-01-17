@@ -153,7 +153,7 @@ async def save_file_to_disk(
         clip_type: ClipType
 ) -> Path:
     """
-    Save file to disk with enhanced error handling.
+    Save file to disk with error handling.
 
     Raises:
         StorageError: With specific error_type and status_code:

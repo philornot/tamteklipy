@@ -24,7 +24,7 @@ from app.schemas.comment import (
 from fastapi import APIRouter, Depends
 from sqlalchemy import desc, func
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
