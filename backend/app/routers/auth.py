@@ -14,7 +14,9 @@ from app.core.security import (
     create_access_token,
     get_current_user_from_token
 )
+from fastapi import BackgroundTasks
 from app.models.user import User
+from app.schemas.password_reset import PasswordResetConfirm
 from app.schemas.password_reset import (
     PasswordResetRequest,
     PasswordResetResponse,
@@ -28,6 +30,7 @@ from app.services.password_reset_utils import (
     create_password_reset_token,
     verify_reset_token
 )
+from app.services.password_reset_utils import verify_reset_token
 from fastapi import APIRouter, Depends
 from fastapi import status
 from fastapi.security import OAuth2PasswordRequestForm
@@ -463,4 +466,118 @@ async def reset_password(
         logger.error(f"Failed to reset password: {e}", exc_info=True)
         raise AuthenticationError(
             message="Failed to reset password"
+        )
+
+
+@router.post("/reset-password")
+async def reset_password(
+        reset_data: PasswordResetConfirm,
+        db: Session = Depends(get_db)
+):
+    """
+    Reset password using token.
+
+    POST /api/auth/reset-password
+    Body: {
+        "token": "abc123def456...",
+        "new_password": "NewSecurePassword123!"
+    }
+
+    Process:
+    1. Validate token (exists, not expired, not used)
+    2. Validate new password strength
+    3. Hash new password
+    4. Update user record
+    5. Mark token as used
+
+    Returns:
+        dict: Success message with username
+
+    Raises:
+        AuthenticationError: Invalid/expired/used token or inactive account
+        ValidationError: Weak password
+
+    Security:
+    - Token can only be used once
+    - 30-minute expiration
+    - Minimum 8 character password
+    - Inactive accounts cannot reset password
+    """
+    token = reset_data.token
+    new_password = reset_data.new_password
+
+    # ========================================================================
+    # TK-277: Validate token (expiry, used)
+    # ========================================================================
+    token_obj = verify_reset_token(token, db)
+
+    if not token_obj:
+        logger.warning("Invalid or expired reset token attempt")
+        raise AuthenticationError(
+            message="Invalid or expired reset token",
+            details={"hint": "Request a new password reset"}
+        )
+
+    # Get associated user
+    user = token_obj.user
+
+    # Check if account is active
+    if not user.is_active:
+        logger.warning(f"Reset attempt for inactive user: {user.username}")
+        raise AuthenticationError(
+            message="Account is inactive"
+        )
+
+    # ========================================================================
+    # Password validation
+    # ========================================================================
+    if len(new_password) < 8:
+        raise ValidationError(
+            message="Password must be at least 8 characters",
+            field="new_password"
+        )
+
+    if len(new_password) > 100:
+        raise ValidationError(
+            message="Password is too long (max 100 characters)",
+            field="new_password"
+        )
+
+    # Optional: Check for common weak passwords
+    weak_passwords = ["password", "12345678", "password123"]
+    if new_password.lower() in weak_passwords:
+        raise ValidationError(
+            message="Password is too common. Choose a stronger password",
+            field="new_password"
+        )
+
+    # ========================================================================
+    # TK-278: Hash new password
+    # TK-279: Update user & mark token as used
+    # ========================================================================
+    try:
+        # Hash the new password
+        user.hashed_password = hash_password(new_password)
+
+        # Mark token as used (prevents reuse)
+        token_obj.mark_as_used()
+
+        # Commit both changes atomically
+        db.commit()
+
+        logger.info(
+            f"Password reset successful for user: {user.username} "
+            f"(token_id: {token_obj.id})"
+        )
+
+        return {
+            "message": "Password has been reset successfully",
+            "username": user.username
+        }
+
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to reset password for {user.username}: {e}", exc_info=True)
+        raise AuthenticationError(
+            message="Failed to reset password. Please try again"
         )
