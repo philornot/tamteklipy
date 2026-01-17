@@ -304,7 +304,7 @@ async def get_clip_awards(
 
     GET /api/awards/clips/{clip_id}
     """
-    # Sprawdź czy klip istnieje
+    # Check clip exists
     clip = db.query(Clip).filter(
         Clip.id == clip_id,
         Clip.is_deleted == False
@@ -313,14 +313,14 @@ async def get_clip_awards(
     if not clip:
         raise NotFoundError(resource="Klip", resource_id=clip_id)
 
-    # Pobierz nagrody z joinami
+    # Fetch awards with optimized loading
     awards = db.query(Award).options(
-        joinedload(Award.user)
+        selectinload(Award.user)
     ).filter(
         Award.clip_id == clip_id
     ).order_by(Award.awarded_at.desc()).all()
 
-    # Pogrupuj po typach
+    # Group by type (in-memory, fast)
     awards_by_type = {}
     for award in awards:
         if award.award_name not in awards_by_type:

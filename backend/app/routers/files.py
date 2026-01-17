@@ -363,31 +363,40 @@ async def list_clips(
         db: Session = Depends(get_db),
 ):
     """
-    Listowanie klipów z paginacją, sortowaniem i filtrowaniem
+    Lista klipów z paginacją, filtrowaniem i sortowaniem.
 
-    **Parametry:**
-    - page: Numer strony (min: 1)
-    - limit: Liczba klipów na stronę (1-100)
-    - sort_by: Pole sortowania (created_at, filename, file_size, duration)
-    - sort_order: Kierunek sortowania (asc, desc)
-    - clip_type: Filtrowanie po typie (video, screenshot)
-    - uploader_id: Filtrowanie po uploaderze
+    :param response: Obiekt FastAPI Response (używany do ustawienia nagłówków Link dla prefetch)
+    :type response: Response
+    :param page: Numer strony (min: 1)
+    :type page: int
+    :param limit: Liczba klipów na stronę (1-100)
+    :type limit: int
+    :param sort_by: Pole sortowania. Dozwolone: ``created_at``, ``filename``, ``file_size``, ``duration``
+    :type sort_by: str
+    :param sort_order: Kierunek sortowania: ``asc`` lub ``desc``
+    :type sort_order: str
+    :param clip_type: Filtrowanie po typie klipa (np. ``video``, ``screenshot``)
+    :type clip_type: Optional[str]
+    :param uploader_id: ID uploader'a do filtrowania
+    :type uploader_id: Optional[int]
+    :param db: Sesja bazy danych (dependency)
+    :type db: Session
 
-    **Returns:**
-    - Lista klipów z metadanymi
-    - Prefetch hints dla miniatur (HTTP/2)
+    :returns: Zwraca obiekt ``ClipListResponse`` zawierający listę klipów, total, page, limit i pages.
+    :rtype: ClipListResponse
     """
-    # Walidacja i normalizacja parametrów
+    # Validation
     page = max(1, page)
     limit = min(max(1, limit), 100)
     offset = (page - 1) * limit
 
-    # Bazowe query z optymalizacją
+    # Base query with optimized loading strategy
     query = db.query(Clip).options(
+        # Use selectinload for collections (better than joinedload)
         selectinload(Clip.awards).selectinload(Award.user)
     ).filter(Clip.is_deleted == False)
 
-    # Filtrowanie po typie klipa
+    # Filters
     if clip_type:
         try:
             filter_type = ClipType(clip_type.lower())
@@ -398,11 +407,10 @@ async def list_clips(
                 field="clip_type"
             )
 
-    # Filtrowanie po uploaderze
     if uploader_id:
         query = query.filter(Clip.uploader_id == uploader_id)
 
-    # Sortowanie
+    # Sorting (uses indexes)
     allowed_sort_fields = {
         "created_at": Clip.created_at,
         "filename": Clip.filename,
@@ -421,21 +429,23 @@ async def list_clips(
         asc(sort_field) if sort_order.lower() == "asc" else desc(sort_field)
     )
 
-    # Paginacja i wykonanie query
+    # Pagination and execute
     total = query.count()
     clips = query.offset(offset).limit(limit).all()
 
-    # Pobierz typy nagród (batch query)
+    # Batch fetch award types (instead of N+1 queries)
     all_award_names = {
         award.award_name
         for clip in clips
         for award in clip.awards
     }
+
     award_types = []
     if all_award_names:
         award_types = db.query(AwardType).filter(
             AwardType.name.in_(all_award_names)
         ).all()
+
     award_types_map = {at.name: at for at in award_types}
 
     # Przygotowanie response

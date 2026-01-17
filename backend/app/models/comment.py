@@ -3,10 +3,10 @@ SQLAlchemy model dla Comment (komentarze do klipów)
 """
 import logging
 from datetime import datetime, timedelta
-from typing import Optional
 
 from app.core.database import Base
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text
+from sqlalchemy import Column, Integer, Boolean, DateTime, ForeignKey, Text
+from sqlalchemy import Index
 from sqlalchemy.orm import relationship, validates
 
 logger = logging.getLogger(__name__)
@@ -47,6 +47,16 @@ class Comment(Base):
         back_populates="parent",
         cascade="all, delete-orphan",
         foreign_keys=[parent_id]
+    )
+    __table_args__ = (
+        # Index for comments by clip (top-level only)
+        Index('ix_comments_clip_parent_created', 'clip_id', 'parent_id', 'created_at'),
+
+        # Index for user's comments
+        Index('ix_comments_user_created', 'user_id', 'created_at'),
+
+        # Index for deleted filter
+        Index('ix_comments_deleted', 'is_deleted'),
     )
 
     def __repr__(self):

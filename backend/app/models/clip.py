@@ -7,7 +7,8 @@ from datetime import datetime
 from pathlib import Path
 
 from app.core.database import Base
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Enum as SQLEnum
+from sqlalchemy import Boolean, Enum as SQLEnum
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Index
 from sqlalchemy.orm import relationship, validates
 
 logger = logging.getLogger(__name__)
@@ -57,6 +58,18 @@ class Clip(Base):
 
     # Komentarze
     comments = relationship("Comment", back_populates="clip", cascade="all, delete-orphan")
+
+    # Composite indexes for common queries
+    __table_args__ = (
+        # Index for /clips endpoint (created_at DESC, is_deleted filter)
+        Index('ix_clips_created_at_deleted', 'created_at', 'is_deleted'),
+
+        # Index for /clips endpoint filtered by type
+        Index('ix_clips_type_deleted', 'clip_type', 'is_deleted'),
+
+        # Index for uploader filtering
+        Index('ix_clips_uploader_deleted', 'uploader_id', 'is_deleted'),
+    )
 
     def __repr__(self):
         return f"<Clip(id={self.id}, filename='{self.filename}', type={self.clip_type}, uploader_id={self.uploader_id})>"

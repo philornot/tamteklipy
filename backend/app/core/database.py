@@ -8,10 +8,12 @@ Critical fixes for Oracle Cloud deployment:
 - Connection pool pre-ping (detects stale connections)
 """
 import logging
+import time
 from contextlib import contextmanager
 
 from app.core.config import settings
-from sqlalchemy import create_engine, event, pool
+from sqlalchemy import create_engine, pool
+from sqlalchemy import event
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 
@@ -171,6 +173,23 @@ def get_db_context():
         raise
     finally:
         db.close()
+
+
+@event.listens_for(engine, "before_cursor_execute")
+def before_cursor_execute(conn, cursor, statement, parameters, context, executemany):
+    """Log slow queries (> 100ms)"""
+    conn.info.setdefault('query_start_time', []).append(time.time())
+
+
+@event.listens_for(engine, "after_cursor_execute")
+def after_cursor_execute(conn, cursor, statement, parameters, context, executemany):
+    """Log slow queries"""
+    total = time.time() - conn.info['query_start_time'].pop(-1)
+
+    if total > 0.1:  # Log queries > 100ms
+        logger.warning(
+            f"Slow query ({total:.2f}s): {statement[:200]}"
+        )
 
 
 # ============================================================================

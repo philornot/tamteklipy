@@ -217,7 +217,7 @@ async def get_comments(
 
     GET /api/clips/{clip_id}/comments?page=1&limit=20
     """
-    # Sprawdź czy klip istnieje
+    # Check clip exists
     clip = db.query(Clip).filter(
         Clip.id == clip_id,
         Clip.is_deleted == False
@@ -226,7 +226,7 @@ async def get_comments(
     if not clip:
         raise NotFoundError(resource="Klip", resource_id=clip_id)
 
-    # Walidacja parametrów
+    # Validation
     if page < 1:
         page = 1
     if limit < 1:
@@ -236,20 +236,20 @@ async def get_comments(
 
     offset = (page - 1) * limit
 
-    # Query dla top-level komentarzy (parent_id = None)
+    # Optimized query for top-level comments with replies
     query = db.query(Comment).options(
-        joinedload(Comment.user),
-        joinedload(Comment.replies).joinedload(Comment.user)
+        selectinload(Comment.user),
+        selectinload(Comment.replies).selectinload(Comment.user)
     ).filter(
         Comment.clip_id == clip_id,
         Comment.parent_id == None,
         Comment.is_deleted == False
     ).order_by(desc(Comment.created_at))
 
-    # Total przed paginacją
+    # Total before pagination
     total = query.count()
 
-    # Paginacja
+    # Paginated results
     comments = query.offset(offset).limit(limit).all()
 
     # Konwertuj do response z replies

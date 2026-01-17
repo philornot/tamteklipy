@@ -4,7 +4,7 @@ SQLAlchemy model dla Award — nagrody przyznawane do klipów
 from datetime import datetime
 
 from app.core.database import Base
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, UniqueConstraint, Index
 from sqlalchemy.orm import relationship
 
 
@@ -33,9 +33,18 @@ class Award(Base):
     clip = relationship("Clip", back_populates="awards")
     user = relationship("User", back_populates="awards_given")
 
-    # Constraint - użytkownik może przyznać daną nagrodę tylko raz dla klipa
     __table_args__ = (
+        # Constraint - użytkownik może przyznać daną nagrodę tylko raz dla klipa
         UniqueConstraint('clip_id', 'user_id', 'award_name', name='uq_clip_user_award'),
+
+        # Index for awards by clip (most common query)
+        Index('ix_awards_clip_awarded', 'clip_id', 'awarded_at'),
+
+        # Index for user's awards
+        Index('ix_awards_user_awarded', 'user_id', 'awarded_at'),
+
+        # Index for award type filtering
+        Index('ix_awards_name', 'award_name'),
     )
 
     def __repr__(self):
