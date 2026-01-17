@@ -40,13 +40,20 @@ def get_storage_directory(clip_type: ClipType) -> Path:
 
 def check_storage_health(storage_dir: Path) -> dict:
     """
-    Sprawdza stan storage i zwraca szczegółowe info o problemach.
-
-    Args:
-        storage_dir: Katalog do sprawdzenia
+    Check storage health and return detailed error info.
 
     Returns:
-        dict: {"ok": bool, "error_type": str, "details": dict}
+        dict: {
+            "ok": bool,
+            "error_type": str | None,  # permission_denied, disk_full, path_not_exists, etc.
+            "details": {
+                "path": str,
+                "message": str,
+                "hints": List[str],
+                "free_mb": float,
+                ...
+            }
+        }
     """
     result = {
         "ok": True,
@@ -54,7 +61,7 @@ def check_storage_health(storage_dir: Path) -> dict:
         "details": {}
     }
 
-    # Check 1: Czy ścieżka istnieje
+    # Check 1: Path exists
     if not storage_dir.exists():
         result["ok"] = False
         result["error_type"] = "path_not_exists"
@@ -69,7 +76,7 @@ def check_storage_health(storage_dir: Path) -> dict:
         }
         return result
 
-    # Check 2: Czy to katalog
+    # Check 2: Is directory
     if not storage_dir.is_dir():
         result["ok"] = False
         result["error_type"] = "not_a_directory"
@@ -79,7 +86,7 @@ def check_storage_health(storage_dir: Path) -> dict:
         }
         return result
 
-    # Check 3: Czy można zapisywać (test file)
+    # Check 3: Write permissions (test file)
     test_file = storage_dir / ".write_test"
     try:
         test_file.touch()
@@ -109,8 +116,9 @@ def check_storage_health(storage_dir: Path) -> dict:
         }
         return result
 
-    # Check 4: Czy jest miejsce (min 100MB)
+    # Check 4: Disk space (min 100MB)
     try:
+        import shutil
         stat = shutil.disk_usage(storage_dir)
         free_mb = stat.free / (1024 * 1024)
 
@@ -145,47 +153,43 @@ async def save_file_to_disk(
         clip_type: ClipType
 ) -> Path:
     """
-    Zapisuje plik na dysku z ulepszoną obsługą błędów.
-
-    Args:
-        file_content: Zawartość pliku w bajtach
-        unique_filename: Unikalna nazwa pliku
-        clip_type: Typ klipa (VIDEO/SCREENSHOT)
-
-    Returns:
-        Path: Ścieżka do zapisanego pliku
+    Save file to disk with enhanced error handling.
 
     Raises:
-        StorageError: Gdy wystąpi problem z zapisem
+        StorageError: With specific error_type and status_code:
+            - permission_denied (500)
+            - disk_full (507)
+            - path_not_exists (503)
     """
     storage_dir = get_storage_directory(clip_type)
 
-    # Pre-check: Sprawdź stan storage
+    # Pre-check: Health check before attempting write
     health = check_storage_health(storage_dir)
 
     if not health["ok"]:
         error_type = health["error_type"]
         details = health["details"]
 
-        # Wybierz odpowiedni status code
-        if error_type == "permission_denied":
-            status_code = 500  # Server misconfiguration
-        elif error_type == "disk_full":
-            status_code = 507  # Insufficient Storage
-        elif error_type in ["path_not_exists", "not_a_directory"]:
-            status_code = 503  # Service Unavailable (storage not mounted)
-        else:
-            status_code = 500
+        # Map error type to HTTP status code
+        status_code_map = {
+            "permission_denied": 500,  # Server misconfiguration
+            "disk_full": 507,  # Insufficient Storage
+            "path_not_exists": 503,  # Service Unavailable
+            "not_a_directory": 503,
+            "write_failed": 500
+        }
+
+        status_code = status_code_map.get(error_type, 500)
 
         raise StorageError(
             message=details.get("message", "Błąd dostępu do storage"),
             path=details.get("path"),
+            status_code=status_code,
             details={
                 "error_type": error_type,
                 "hints": details.get("hints"),
                 "system_error": details.get("system_error"),
-                "free_mb": details.get("free_mb"),
-                "status_code": status_code
+                "free_mb": details.get("free_mb")
             }
         )
 
@@ -196,21 +200,22 @@ async def save_file_to_disk(
         raise StorageError(
             message=f"Brak uprawnień do utworzenia katalogu: {storage_dir}",
             path=str(storage_dir),
+            status_code=500,
             details={
                 "error_type": "permission_denied",
                 "system_error": str(e),
                 "hints": [
                     f"sudo chown -R $USER:$USER {storage_dir}",
                     "Skontaktuj się z administratorem (Filip)"
-                ],
-                "status_code": 500
+                ]
             }
         )
     except OSError as e:
         raise StorageError(
             message=f"Nie można utworzyć katalogu: {e}",
             path=str(storage_dir),
-            details={"system_error": str(e), "status_code": 500}
+            status_code=500,
+            details={"system_error": str(e)}
         )
 
     file_path = storage_dir / unique_filename
@@ -219,6 +224,9 @@ async def save_file_to_disk(
 
     try:
         # Atomic write: temp file -> rename
+        import tempfile
+        import os
+
         with tempfile.NamedTemporaryFile(delete=False, dir=str(storage_dir)) as tmp:
             tmp_path = Path(tmp.name)
             tmp.write(file_content)
@@ -236,6 +244,7 @@ async def save_file_to_disk(
         raise StorageError(
             message="Brak uprawnień do zapisu pliku",
             path=str(file_path),
+            status_code=500,
             details={
                 "error_type": "permission_denied",
                 "system_error": str(e),
@@ -243,17 +252,18 @@ async def save_file_to_disk(
                     f"sudo chown -R $USER:$USER {storage_dir}",
                     f"sudo chmod -R 755 {storage_dir}",
                     "Skontaktuj się z administratorem (Filip)"
-                ],
-                "status_code": 500
+                ]
             }
         )
     except OSError as e:
-        # Disk full podczas zapisu
+        # Disk full during write
         if "No space left" in str(e) or e.errno == 28:  # ENOSPC
+            import shutil
             stat = shutil.disk_usage(storage_dir)
             raise StorageError(
                 message="Brak miejsca na dysku",
                 path=str(storage_dir),
+                status_code=507,
                 details={
                     "error_type": "disk_full",
                     "free_mb": round(stat.free / (1024 * 1024), 2),
@@ -261,15 +271,15 @@ async def save_file_to_disk(
                     "hints": [
                         "Usuń stare pliki z serwera",
                         "Zwiększ rozmiar pendrive'a"
-                    ],
-                    "status_code": 507
+                    ]
                 }
             )
 
         raise StorageError(
             message=f"Błąd zapisu pliku: {e}",
             path=str(file_path),
-            details={"system_error": str(e), "status_code": 500}
+            status_code=500,
+            details={"system_error": str(e)}
         )
 
     finally:

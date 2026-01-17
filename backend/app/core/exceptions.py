@@ -117,7 +117,7 @@ class FileUploadError(TamteKlipyException):
 
 
 class StorageError(TamteKlipyException):
-    """Błąd dostępu do storage"""
+    """Storage error with specific error types and status codes."""
 
     def __init__(
             self,
@@ -127,6 +127,20 @@ class StorageError(TamteKlipyException):
             status_code: Optional[int] = None,
             details: Optional[Dict[str, Any]] = None
     ):
+        """
+        Create storage error with detailed context.
+
+        Args:
+            message: Error message for user
+            path: File/directory path that caused error
+            status_code: HTTP status code (500, 503, 507)
+            details: Additional context (error_type, hints, system_error, etc.)
+
+        Status codes:
+            500 - Permission denied or server misconfiguration
+            503 - Storage not mounted or unavailable
+            507 - Insufficient storage (disk full)
+        """
         combined_details = dict(details) if details else {}
         if path and "path" not in combined_details:
             combined_details["path"] = path
