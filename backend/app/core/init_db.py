@@ -11,7 +11,7 @@ from app.core.database import engine, Base, SessionLocal, check_db_connection
 from app.core.logging_config import setup_logging
 from app.models import User, Clip, Award, Comment
 from app.models.award_type import AwardType
-from app.models.password_reset_token import PasswordResetToken  # NEW IMPORT
+from app.models.password_reset_token import PasswordResetToken
 
 logger = logging.getLogger(__name__)
 

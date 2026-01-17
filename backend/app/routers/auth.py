@@ -1,7 +1,5 @@
 """
 Router dla autoryzacji — logowanie, rejestracja, tokeny JWT
-
-Fixed version with proper error handling and session cleanup.
 """
 import logging
 
@@ -17,10 +15,19 @@ from app.core.security import (
     get_current_user_from_token
 )
 from app.models.user import User
+from app.schemas.password_reset import (
+    PasswordResetRequest,
+    PasswordResetResponse,
+    PasswordResetConfirm
+)
 from app.schemas.token import Token
 from app.schemas.user import UserCreate
 from app.schemas.user import UserResponse, UserWithToken
 from app.schemas.user import UserUpdate
+from app.services.password_reset_utils import (
+    create_password_reset_token,
+    verify_reset_token
+)
 from fastapi import APIRouter, Depends
 from fastapi import status
 from fastapi.security import OAuth2PasswordRequestForm
@@ -29,6 +36,27 @@ from sqlalchemy.orm import Session
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+async def send_reset_email_task(email: str, token: str):
+    """
+    Background task to send password reset email.
+
+    TODO: Implement actual email sending (TK-275)
+    For now, just log the token (development only!)
+
+    Args:
+        email: User's email address
+        token: Password reset token
+    """
+    reset_link = f"https://tamteklipy.pl/reset-password?token={token}"
+
+    # TODO: Replace with actual email service
+    logger.info(f"[DEV] Password reset link for {email}: {reset_link}")
+    logger.info(f"[DEV] Token: {token}")
+
+    # In production, use email service:
+    # await email_service.send_password_reset_email(email, reset_link)
 
 
 @router.post("/login", response_model=Token)
@@ -294,3 +322,145 @@ async def update_profile(
         db.rollback()
         logger.error(f"Failed to update user {current_user.username}: {e}")
         raise DatabaseError(message="Nie można zaktualizować profilu")
+
+
+@router.post("/request-password-reset", response_model=PasswordResetResponse)
+async def request_password_reset(
+        request_data: PasswordResetRequest,
+        background_tasks: BackgroundTasks,
+        db: Session = Depends(get_db)
+):
+    """
+    Request password reset token.
+
+    POST /api/auth/request-password-reset
+    Body: {"email": "user@example.com"}
+
+    Security considerations:
+    - Always returns success message (don't leak user existence)
+    - Token sent via email only
+    - 30-minute expiration
+    - Invalidates previous unused tokens
+
+    Returns:
+        PasswordResetResponse: Generic success message
+    """
+    email = request_data.email.lower().strip()
+
+    logger.info(f"Password reset requested for email: {email}")
+
+    # Find user by email
+    user = db.query(User).filter(User.email == email).first()
+
+    # SECURITY: Always return success, even if email doesn't exist
+    # This prevents email enumeration attacks
+    if not user:
+        logger.warning(f"Password reset requested for non-existent email: {email}")
+        return PasswordResetResponse()
+
+    # Check if user is active
+    if not user.is_active:
+        logger.warning(f"Password reset requested for inactive user: {email}")
+        # Still return success for security
+        return PasswordResetResponse()
+
+    # Generate reset token
+    try:
+        token_obj = create_password_reset_token(
+            user_id=user.id,
+            db=db,
+            expiration_minutes=30
+        )
+
+        # Queue email sending in background
+        background_tasks.add_task(
+            send_reset_email_task,
+            email=user.email,
+            token=token_obj.token
+        )
+
+        logger.info(
+            f"Password reset token created for user {user.username} "
+            f"(expires: {token_obj.expires_at})"
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to create reset token for {email}: {e}", exc_info=True)
+        # Still return success for security
+        pass
+
+    return PasswordResetResponse()
+
+
+@router.post("/reset-password")
+async def reset_password(
+        reset_data: PasswordResetConfirm,
+        db: Session = Depends(get_db)
+):
+    """
+    Reset password using token.
+
+    POST /api/auth/reset-password
+    Body: {
+        "token": "abc123...",
+        "new_password": "NewSecurePassword123!"
+    }
+
+    Returns:
+        dict: Success message
+
+    Raises:
+        AuthenticationError: Invalid or expired token
+        ValidationError: Weak password
+    """
+    token = reset_data.token
+    new_password = reset_data.new_password
+
+    # Verify token
+    token_obj = verify_reset_token(token, db)
+
+    if not token_obj:
+        logger.warning(f"Invalid or expired reset token used")
+        raise AuthenticationError(
+            message="Invalid or expired reset token",
+            details={"hint": "Request a new password reset"}
+        )
+
+    # Get user
+    user = token_obj.user
+
+    if not user.is_active:
+        logger.warning(f"Reset attempt for inactive user: {user.username}")
+        raise AuthenticationError(
+            message="Account is inactive"
+        )
+
+    # Validate new password
+    if len(new_password) < 8:
+        raise ValidationError(
+            message="Password must be at least 8 characters",
+            field="new_password"
+        )
+
+    # Update password
+    try:
+        user.hashed_password = hash_password(new_password)
+
+        # Mark token as used
+        token_obj.mark_as_used()
+
+        db.commit()
+
+        logger.info(f"Password reset successful for user: {user.username}")
+
+        return {
+            "message": "Password has been reset successfully",
+            "username": user.username
+        }
+
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to reset password: {e}", exc_info=True)
+        raise AuthenticationError(
+            message="Failed to reset password"
+        )
